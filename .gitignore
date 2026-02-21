@@ -1,0 +1,16 @@
+# OpenClaw / misc
+.DS_Store
+
+# Node
+node_modules/
+*.log
+
+# Local state / outputs
+tmp/
+reports/
+memory/
+
+# Secrets / env
+.env
+*.key
+*.pem
