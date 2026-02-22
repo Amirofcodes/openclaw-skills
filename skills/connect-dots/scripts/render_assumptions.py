@@ -20,8 +20,31 @@ import sys
 from datetime import datetime, timezone
 
 
+def _now_dt() -> datetime:
+    return datetime.now(timezone.utc).astimezone()
+
+
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+    return _now_dt().isoformat(timespec="seconds")
+
+
+def _parse_iso(ts: str) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone()
+    except Exception:
+        return None
+
+
+def _recency_days(ts: str, now: datetime) -> int | None:
+    dt = _parse_iso(ts)
+    if not dt:
+        return None
+    d = (now - dt).total_seconds() / 86400.0
+    if d < 0:
+        d = 0
+    return int(round(d))
 
 
 def _load(path: str):
@@ -33,19 +56,20 @@ def _safe_list(x):
     return x if isinstance(x, list) else []
 
 
-def _fmt_evidence(item) -> str:
+def _fmt_evidence(item, now: datetime) -> str:
     ev = _safe_list(item.get("evidence"))
     if not ev:
         return "Source: (missing)"
     e0 = ev[0]
     path = e0.get("path", "?")
     lines = e0.get("lines", "?")
-    recency = e0.get("recency", None)
+
+    # Prefer explicit recencyDays, else compute from ts.
+    recency = e0.get("recencyDays", None)
     if recency is None:
-        # accept ts; caller may precompute recency
-        rec = ""
-    else:
-        rec = f" ({recency}d ago)"
+        recency = _recency_days(e0.get("ts", ""), now)
+
+    rec = f" ({recency}d ago)" if recency is not None else ""
     return f"Source: {path}#{lines}{rec}"
 
 
@@ -75,7 +99,7 @@ def _diff(prev, cur):
     added, updated, retracted = [], [], []
     for cid, (csec, cit) in c.items():
         if cid not in p:
-            added.append(f"+ {cit.get('statement','(no statement)')}")
+            added.append(f"+ {(cit.get('statement') or cit.get('fact') or '(no statement)')}")
             continue
         _, pit = p[cid]
         changed = False
@@ -84,11 +108,11 @@ def _diff(prev, cur):
                 changed = True
                 break
         if changed:
-            updated.append(f"~ {cit.get('statement','(no statement)')}")
+            updated.append(f"~ {(cit.get('statement') or cit.get('fact') or '(no statement)')}")
 
     for pid, (_, pit) in p.items():
         if pid not in c:
-            retracted.append(f"- {pit.get('statement','(no statement)')}")
+            retracted.append(f"- {(pit.get('statement') or pit.get('fact') or '(no statement)')}")
 
     return _cap(added, 5), _cap(updated, 5), _cap(retracted, 5)
 
@@ -107,7 +131,8 @@ def main():
         return 2
 
     scope = model.get("scope", "(unknown)")
-    gen = _now_iso()
+    now = _now_dt()
+    gen = now.isoformat(timespec="seconds")
 
     confirmed = [x for x in _safe_list(model.get("confirmed_facts")) if isinstance(x, dict) and x.get("status") != "retracted"]
     hyps = [x for x in _safe_list(model.get("hypotheses")) if isinstance(x, dict) and x.get("status") != "retracted"]
@@ -136,7 +161,7 @@ def main():
             val = it.get("value")
             last_conf = it.get("last_confirmed") or it.get("last_seen") or "?"
             v = f"{val}" if val is not None else ""
-            src = _fmt_evidence(it)
+            src = _fmt_evidence(it, now)
             lines.append(f"- {fact} · {v} · last confirmed: {last_conf} · {src}")
     else:
         lines.append("- (none)")
@@ -150,7 +175,7 @@ def main():
             why = it.get("why", "")
             confirm = it.get("confirm", "")
             expires = it.get("expires_at", "?")
-            src = _fmt_evidence(it)
+            src = _fmt_evidence(it, now)
             why_part = f" · why: {why}" if why else ""
             conf_part = f"{int(round(conf*100))}%" if conf <= 1 else f"{conf}%"
             confirm_part = f" · confirm/deny: {confirm}" if confirm else ""
@@ -165,7 +190,7 @@ def main():
             stmt = it.get("statement", "(no statement)")
             stale_why = it.get("stale_why", "expired/old evidence")
             action = it.get("proposed_action", "refresh/drop")
-            src = _fmt_evidence(it)
+            src = _fmt_evidence(it, now)
             lines.append(f"- {stmt} · why stale: {stale_why} · action: {action} · {src}")
     else:
         lines.append("- (none)")
