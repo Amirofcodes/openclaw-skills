@@ -21,6 +21,8 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         (self.root / "memory").mkdir()
         # Create a fake memory file to satisfy evidence verification.
         (self.root / "memory" / "2026-02-22.md").write_text("a\nb\nc\nd\ne\n", encoding="utf-8")
+        # Include a line that matches the hypothesis statement for quote-in-range verification.
+        (self.root / "memory" / "2026-02-22.md").write_text("JD prefers concise communication.\n" + (self.root / "memory" / "2026-02-22.md").read_text(encoding="utf-8"), encoding="utf-8")
 
         self.model_path = self.root / "model.json"
         self.proposal_path = self.root / "proposal.json"

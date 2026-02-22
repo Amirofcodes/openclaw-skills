@@ -137,25 +137,42 @@ def parse_lines_spec(lines: str) -> Tuple[int, int]:
 
 
 def verify_evidence_sources(evidence: List[Dict[str, Any]], workspace: Path) -> None:
-    """Fail closed if cited line ranges look invalid or file is missing.
+    """Fail closed unless evidence is auditable.
 
-    This enforces the "citation + recency" contract.
+    Enforces:
+    - file exists under workspace
+    - line range is valid
+    - quote appears within the cited line range
+
+    This is the hard guard behind "every non-trivial item needs a citation".
     """
+    ws = workspace.resolve()
     for ev in evidence or []:
         p = ev.get("path")
         if not p:
             raise SystemExit("evidence missing path")
         full = (workspace / p).resolve()
-        if not str(full).startswith(str(workspace.resolve())):
+        if not str(full).startswith(str(ws)):
             raise SystemExit(f"evidence path escapes workspace: {p}")
         if not full.exists():
             raise SystemExit(f"evidence file not found: {p}")
+
         a, b = parse_lines_spec(ev.get("lines", ""))
-        # Count lines quickly.
+        quote = (ev.get("quote") or "").strip()
+        if not quote:
+            raise SystemExit(f"evidence quote missing: {p} {ev.get('lines')}")
+
         with full.open("r", encoding="utf-8", errors="ignore") as f:
-            n = sum(1 for _ in f)
+            lines = f.readlines()
+        n = len(lines)
         if b > n:
             raise SystemExit(f"evidence line range out of bounds: {p} {ev.get('lines')} (file has {n} lines)")
+
+        snippet = "".join(lines[a - 1 : b])
+        if quote not in snippet:
+            raise SystemExit(
+                f"evidence quote not found in cited range: {p} {ev.get('lines')} (quote='{quote[:80]}...')"
+            )
 
 
 def ensure_model_skeleton(scope: str) -> Dict[str, Any]:
