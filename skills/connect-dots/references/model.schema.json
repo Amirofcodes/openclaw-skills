@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "connect-dots model",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "scope",
+    "updatedAt",
+    "confirmed_facts",
+    "hypotheses",
+    "stale_items",
+    "open_loops",
+    "candidate_moves",
+    "do_not_store"
+  ],
+  "properties": {
+    "scope": {
+      "type": "string",
+      "enum": [
+        "user-profile/preferences",
+        "openclaw-runtime/ops",
+        "repos"
+      ]
+    },
+    "updatedAt": { "type": "string" },
+    "meta": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "confirmed_facts": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/factItem" }
+    },
+    "hypotheses": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/modelItem" }
+    },
+    "stale_items": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/modelItem" }
+    },
+    "open_loops": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/modelItem" }
+    },
+    "candidate_moves": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/modelItem" }
+    },
+    "do_not_store": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/doNotStore" }
+    }
+  },
+  "definitions": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "lines", "quote"],
+      "properties": {
+        "path": { "type": "string" },
+        "lines": { "type": "string", "pattern": "^L[0-9]+-L[0-9]+$" },
+        "quote": { "type": "string", "minLength": 1 },
+        "ts": { "type": "string" },
+        "recencyDays": { "type": "number", "minimum": 0 }
+      }
+    },
+    "factItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fact", "value", "last_confirmed", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "fact": { "type": "string", "minLength": 1 },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "domain": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "first_seen": { "type": "string" },
+        "last_seen": { "type": "string" },
+        "last_confirmed": { "type": "string" },
+        "expires_at": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "stale", "retracted"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/definitions/evidence" }, "minItems": 1 }
+      }
+    },
+    "modelItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "confidence", "first_seen", "last_seen", "expires_at", "status", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "statement": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string" },
+        "why": { "type": "string" },
+        "confirm": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "first_seen": { "type": "string" },
+        "last_seen": { "type": "string" },
+        "expires_at": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "stale", "retracted"] },
+        "evidence": { "type": "array", "items": { "$ref": "#/definitions/evidence" }, "minItems": 1 }
+      }
+    },
+    "doNotStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pattern", "created_at"],
+      "properties": {
+        "pattern": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string" },
+        "created_at": { "type": "string" },
+        "note": { "type": "string" }
+      }
+    }
+  }
+}

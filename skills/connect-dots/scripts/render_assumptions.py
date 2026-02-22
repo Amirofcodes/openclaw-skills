@@ -109,9 +109,13 @@ def main():
     scope = model.get("scope", "(unknown)")
     gen = _now_iso()
 
-    confirmed = sorted(_safe_list(model.get("confirmed_facts")), key=lambda x: x.get("last_seen", ""), reverse=True)
-    hyps = sorted(_safe_list(model.get("hypotheses")), key=lambda x: x.get("confidence", 0), reverse=True)
-    stale = sorted(_safe_list(model.get("stale_items")), key=lambda x: x.get("last_seen", ""), reverse=True)
+    confirmed = [x for x in _safe_list(model.get("confirmed_facts")) if isinstance(x, dict) and x.get("status") != "retracted"]
+    hyps = [x for x in _safe_list(model.get("hypotheses")) if isinstance(x, dict) and x.get("status") != "retracted"]
+    stale = [x for x in _safe_list(model.get("stale_items")) if isinstance(x, dict) and x.get("status") != "retracted"]
+
+    confirmed = sorted(confirmed, key=lambda x: x.get("last_seen", ""), reverse=True)
+    hyps = sorted(hyps, key=lambda x: x.get("confidence", 0), reverse=True)
+    stale = sorted(stale, key=lambda x: x.get("last_seen", ""), reverse=True)
     dns = _safe_list(model.get("do_not_store"))
 
     confirmed = _cap(confirmed, 5)
