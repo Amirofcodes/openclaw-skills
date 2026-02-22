@@ -116,7 +116,21 @@ Item shape (suggested):
 }
 ```
 
-## 10) "Show assumptions about me" (locked)
+## 10) Deterministic core (locked)
+Best compromise (trust + auditability):
+- LLM does synthesis/proposals.
+- Scripts do all state mutation.
+- Fail closed: invalid proposal/schema mismatch/bad citations => no write.
+
+Artifacts:
+- Proposal schema: `references/proposal.schema.json`
+- Model schema: `references/model.schema.json`
+- Builder: `scripts/build_model.py`
+- Consent mutations: `scripts/consent_mutations.py`
+- Diff: `scripts/model_diff.py`
+- Validator: `scripts/validate_model.py`
+
+## 11) "Show assumptions about me" (locked)
 Sections + strict caps:
 1) Confirmed facts (max 5)
 2) Top hypotheses (max 5)

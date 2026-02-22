@@ -1,0 +1,72 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "connect-dots proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["scope", "generatedAt", "items"],
+  "properties": {
+    "scope": {
+      "type": "string",
+      "enum": [
+        "user-profile/preferences",
+        "openclaw-runtime/ops",
+        "repos"
+      ]
+    },
+    "generatedAt": { "type": "string" },
+    "items": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["confirmed_facts", "hypotheses", "open_loops", "candidate_moves"],
+      "properties": {
+        "confirmed_facts": { "type": "array", "items": { "$ref": "#/definitions/factProposal" } },
+        "hypotheses": { "type": "array", "items": { "$ref": "#/definitions/itemProposal" } },
+        "open_loops": { "type": "array", "items": { "$ref": "#/definitions/itemProposal" } },
+        "candidate_moves": { "type": "array", "items": { "$ref": "#/definitions/itemProposal" } }
+      }
+    }
+  },
+  "definitions": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "lines", "quote"],
+      "properties": {
+        "path": { "type": "string" },
+        "lines": { "type": "string", "pattern": "^L[0-9]+-L[0-9]+$" },
+        "quote": { "type": "string", "minLength": 1 },
+        "ts": { "type": "string" }
+      }
+    },
+    "itemProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "statement", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "statement": { "type": "string", "minLength": 1 },
+        "domain": { "type": "string" },
+        "why": { "type": "string" },
+        "confirm": { "type": "string" },
+        "ttl_days": { "type": "integer", "minimum": 1 },
+        "user_confirmed": { "type": "boolean" },
+        "conflicts": { "type": "boolean" },
+        "evidence": { "type": "array", "items": { "$ref": "#/definitions/evidence" }, "minItems": 1 }
+      }
+    },
+    "factProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "fact", "value", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "fact": { "type": "string", "minLength": 1 },
+        "value": { "type": ["string", "number", "boolean", "null"] },
+        "domain": { "type": "string" },
+        "ttl_days": { "type": "integer", "minimum": 1 },
+        "user_confirmed": { "type": "boolean" },
+        "evidence": { "type": "array", "items": { "$ref": "#/definitions/evidence" }, "minItems": 1 }
+      }
+    }
+  }
+}

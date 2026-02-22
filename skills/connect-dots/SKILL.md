@@ -55,27 +55,38 @@ Handle these immediately and persistently:
 - **“forget <x>”** → retract matching items (mark `status=retracted`) and suppress future resurfacing.
 - **“show what you currently assume about me”** → render the bounded snapshot below.
 
+## Deterministic core rule (locked)
+- **LLM produces proposals. Scripts mutate state.**
+- Fail closed: invalid proposal/schema mismatch/bad citations ⇒ **no write**.
+
+Scripts:
+- `scripts/build_model.py` — merge proposals, recompute confidence/expiry, TTL decay → writes `model.json`
+- `scripts/consent_mutations.py` — apply consent operations (don’t store / forget / confirm / deny)
+- `scripts/model_diff.py` — diff snapshots (for “what changed”)
+- `scripts/validate_model.py` — JSON Schema validation
+
+Schemas:
+- `references/proposal.schema.json`
+- `references/model.schema.json`
+
 ## Nightly run workflow (silent)
 When invoked by an internal scheduler message (e.g., “connect-dots nightly run”):
 
 1) **Check gates**
-   - Compute `idle_hours` (preferred: from `tmp/connect-dots/state.json`; fallback: last interaction proxy).
+   - Compute `idle_hours`.
    - If `idle_hours < 6`, exit silently.
 
 2) **Collect evidence** (per scope)
    - Use `memory_search` to find high-signal recent items.
    - For each candidate, `read` the source file and extract precise quotes + line ranges.
 
-3) **Update the internal model**
-   - Maintain strict separation:
-     - `confirmed_facts` (only explicitly confirmed)
-     - `hypotheses` (confidence + expiry)
-     - `do_not_store`
-   - Apply TTL decay; expired items go to stale.
+3) **Synthesize proposal (LLM output, no writes yet)**
+   - Write `tmp/connect-dots/proposals/<scope>.json` matching `references/proposal.schema.json`.
 
-4) **Write outputs**
-   - Always: `tmp/connect-dots/...`
-   - If feature flag ON: `memory/internal/connect-dots/...`
+4) **Apply proposal (deterministic write)**
+   - Run `scripts/build_model.py` to update the scope model:
+     - `memory/internal/connect-dots/<scope>/model.json`
+     - optional snapshots under `.../snapshots/YYYY-MM-DD.json`
 
 5) **No messaging at night**
    - Do not DM/announce. This run is internal state preparation.
