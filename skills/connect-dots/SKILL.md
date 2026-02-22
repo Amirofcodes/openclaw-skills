@@ -83,10 +83,11 @@ When invoked by an internal scheduler message (e.g., “connect-dots nightly run
 3) **Synthesize proposal (LLM output, no writes yet)**
    - Write `tmp/connect-dots/proposals/<scope>.json` matching `references/proposal.schema.json`.
 
-4) **Apply proposal (deterministic write)**
-   - Run `scripts/build_model.py` to update the scope model:
-     - `memory/internal/connect-dots/<scope>/model.json`
-     - optional snapshots under `.../snapshots/YYYY-MM-DD.json`
+4) **Bridge (proposal → diff → optional apply)**
+   - Use `scripts/nightly_run.py`:
+     - Phase 1 (2 nights): proposal validate + diff only (no writes)
+     - Phase 2: apply via `build_model.py` if validation passes (fail-closed)
+   - Per-run artifacts live under: `tmp/connect-dots/runs/<runId>/...`
 
 5) **No messaging at night**
    - Do not DM/announce. This run is internal state preparation.
