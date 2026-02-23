@@ -36,7 +36,7 @@ Feature flag:
 
 ## Deterministic gates (locked)
 - Night run gate:
-  - `night_run = (idle_hours >= 6)`
+  - `night_run = (idle_hours >= 4)`
 - Daytime surfacing gate:
   - `surface = (conf >= 80) && (timeliness || blocker || deadline)`
 
@@ -45,9 +45,9 @@ Feature flag:
 - `repos`: CI failing, waiting on review, PR stuck > N days, or JD mentions a near-term release/deadline.
 
 ## Model policy (locked)
-- Nightly brief generation: **force highest reasoning model** (scheduler/config does this).
-- Daytime: force highest reasoning only if gate opens and `(conf >= 85% OR action is high-impact/irreversible)`.
-- Otherwise: default model.
+- Nightly brief generation: **force default OAuth OpenAI model** `openai-codex/gpt-5.2` with `thinking=high`.
+- Daytime: default model (escalate only if you explicitly override in the request).
+- OpenRouter must not be used for this skill.
 
 ## Consent controls (must obey)
 Handle these immediately and persistently:
@@ -74,7 +74,7 @@ When invoked by an internal scheduler message (e.g., “connect-dots nightly run
 
 1) **Check gates**
    - Compute `idle_hours`.
-   - If `idle_hours < 6`, exit silently.
+   - If `idle_hours < 4`, exit silently.
 
 2) **Collect evidence** (per scope)
    - Use `memory_search` to find high-signal recent items.
