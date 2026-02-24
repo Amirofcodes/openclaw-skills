@@ -37,6 +37,7 @@ Feature flag:
 ## Deterministic gates (locked)
 - Night run gate:
   - `night_run = (idle_hours >= 4)`
+  - `idle_hours` is computed from the **timestamp of the last USER chat message** in the JD Telegram direct session transcript (`agent:main:telegram:direct:6484034861`). Assistant/tool/system/cron activity must not reset the idle timer.
 - Daytime surfacing gate:
   - `surface = (conf >= 80) && (timeliness || blocker || deadline)`
 
@@ -73,7 +74,7 @@ Schemas:
 When invoked by an internal scheduler message (e.g., “connect-dots nightly run”):
 
 1) **Check gates**
-   - Compute `idle_hours`.
+   - Compute `idle_hours` from the timestamp of the last USER message in the JD Telegram direct transcript.
    - If `idle_hours < 4`, exit silently.
 
 2) **Collect evidence** (per scope)
