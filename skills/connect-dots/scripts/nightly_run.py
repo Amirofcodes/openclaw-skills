@@ -23,11 +23,17 @@ Usage:
 
 Phase selection:
 - Default phase is read from env CONNECT_DOTS_PHASE, else --phase.
+
+Notes:
+- Evidence validation in build_model.py requires evidence paths to be **under the workspace**.
+  For any runtime-derived facts, this script writes a small snapshot file under the run dir
+  and rewrites the proposal evidence to cite that snapshot (so citations remain auditable).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -39,6 +45,10 @@ def now_id() -> str:
     return datetime.now(timezone.utc).astimezone().strftime("%Y%m%d-%H%M%S")
 
 
+def now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
 def sh(cmd: list[str], *, cwd: Path | None = None, timeout: int = 600) -> tuple[int, str, str]:
     p = subprocess.run(cmd, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
     return p.returncode, p.stdout, p.stderr
@@ -47,6 +57,179 @@ def sh(cmd: list[str], *, cwd: Path | None = None, timeout: int = 600) -> tuple[
 def write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
+
+
+def load_json(path: Path) -> dict:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def dump_json(path: Path, obj: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+
+
+def resolve_scope_dir(runs_root: Path, scope: str) -> Path:
+    """Prefer nested <run>/<scope>/... paths.
+
+    Back-compat: older runs wrote <run>/<scope_with_slashes_replaced_by_underscores>/...
+    """
+    canonical = runs_root / Path(scope)
+    legacy = runs_root / scope.replace("/", "_")
+
+    if (legacy / "proposal.json").exists() and not (canonical / "proposal.json").exists():
+        return legacy
+    return canonical
+
+
+def _read_openclaw_routing() -> dict:
+    """Extract a safe routing snapshot from OpenClaw config.
+
+    We only read the non-secret model routing bits.
+    """
+    cfg_path = os.environ.get("OPENCLAW_CONFIG_PATH")
+    if cfg_path:
+        p = Path(cfg_path).expanduser().resolve()
+    else:
+        p = Path.home() / ".openclaw" / "openclaw.json"
+
+    try:
+        cfg = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        cfg = {}
+
+    defaults = (((cfg.get("agents") or {}).get("defaults") or {}))
+
+    model = defaults.get("model") or {}
+    primary = model.get("primary") or "(unknown)"
+    fallbacks = model.get("fallbacks") or []
+    if not isinstance(fallbacks, list):
+        fallbacks = []
+
+    # Respect JD request: avoid OpenRouter OpenAI/Anthropic usage.
+    fallbacks = [
+        m
+        for m in fallbacks
+        if not (isinstance(m, str) and (m.startswith("openrouter/openai/") or m.startswith("openrouter/anthropic/")))
+    ]
+
+    heartbeat = (defaults.get("heartbeat") or {}).get("model") or "(unknown)"
+
+    return {
+        "primary": primary,
+        "fallbacks": [m for m in fallbacks if isinstance(m, str) and m.strip()],
+        "heartbeat": heartbeat,
+        "configPath": str(p),
+    }
+
+
+def _format_routing_value(r: dict) -> str:
+    primary = r.get("primary") or "(unknown)"
+    fallbacks = r.get("fallbacks") or []
+    hb = r.get("heartbeat") or "(unknown)"
+
+    fb_str = " -> ".join(fallbacks) if fallbacks else "none"
+    return f"primary={primary}; fallbacks={fb_str}; heartbeat={hb}"
+
+
+def _write_routing_snapshot(*, ws: Path, scope_dir: Path, r: dict) -> Path:
+    """Write a small, auditable, workspace-local snapshot file for evidence."""
+    primary = r.get("primary") or "(unknown)"
+    fallbacks = r.get("fallbacks") or []
+    hb = r.get("heartbeat") or "(unknown)"
+
+    fb_str = " -> ".join(fallbacks) if fallbacks else "none"
+
+    snap = scope_dir / "runtime-routing.txt"
+    write_text(
+        snap,
+        "\n".join(
+            [
+                f"primary: {primary}",
+                f"fallbacks: {fb_str}",
+                f"heartbeat: {hb}",
+                f"generatedAt: {now_iso()}",
+            ]
+        )
+        + "\n",
+    )
+    return snap
+
+
+def _patch_openclaw_runtime_proposal(*, ws: Path, scope_dir: Path, proposal_path: Path) -> None:
+    """Ensure high-churn runtime routing facts are sourced from live config snapshots.
+
+    This prevents stale routing facts from being re-ingested purely from memory notes.
+    """
+    try:
+        proposal = load_json(proposal_path)
+    except Exception:
+        return
+
+    if proposal.get("scope") != "openclaw-runtime/ops":
+        return
+
+    routing = _read_openclaw_routing()
+    snap_path = _write_routing_snapshot(ws=ws, scope_dir=scope_dir, r=routing)
+    rel = snap_path.relative_to(ws).as_posix()
+
+    primary = routing.get("primary") or "(unknown)"
+    value = _format_routing_value(routing)
+
+    items = proposal.get("items") or {}
+    facts = items.get("confirmed_facts") or []
+    if not isinstance(facts, list):
+        facts = []
+
+    def matches(it: dict) -> bool:
+        return (it.get("fact") == "model.routing_routine_check") or (it.get("id") == "ops-routing-routine-check")
+
+    patched = False
+    for it in facts:
+        if not isinstance(it, dict):
+            continue
+        if matches(it):
+            it["id"] = it.get("id") or "ops-routing-routine-check"
+            it["fact"] = "model.routing_routine_check"
+            it["value"] = value
+            it.setdefault("domain", "openclaw")
+            it["ttl_days"] = int(it.get("ttl_days") or 14)
+            it["evidence"] = [
+                {
+                    "path": rel,
+                    "lines": "L1-L1",
+                    "quote": f"primary: {primary}",
+                    "ts": now_iso(),
+                }
+            ]
+            patched = True
+            break
+
+    if not patched:
+        facts.append(
+            {
+                "id": "ops-routing-routine-check",
+                "fact": "model.routing_routine_check",
+                "value": value,
+                "domain": "openclaw",
+                "ttl_days": 14,
+                "evidence": [
+                    {
+                        "path": rel,
+                        "lines": "L1-L1",
+                        "quote": f"primary: {primary}",
+                        "ts": now_iso(),
+                    }
+                ],
+            }
+        )
+
+    items["confirmed_facts"] = facts
+    proposal["items"] = items
+
+    dump_json(proposal_path, proposal)
 
 
 def main() -> int:
@@ -80,16 +263,17 @@ def main() -> int:
     disabled_flag = model_root / ".disabled"
 
     # For each scope, expect the LLM to have already written a proposal to a known location OR
-    # the agentTurn message should instruct it to do so. We read from tmp first.
+    # the agentTurn message should instruct it to do so.
     ok_any = True
 
     for scope in scopes:
-        scope_dir = runs_root / scope.replace("/", "_")
+        scope_dir = resolve_scope_dir(runs_root, scope)
         proposal_path = scope_dir / "proposal.json"
         pre_path = scope_dir / "model.pre.json"
         post_path = scope_dir / "model.post.json"
         diff_path = scope_dir / "diff.txt"
         err_path = scope_dir / "error.log"
+
         # Always create an error log file (empty on success).
         write_text(err_path, "")
 
@@ -98,6 +282,10 @@ def main() -> int:
             write_text(err_path, f"ERROR: proposal.json missing for scope {scope}\n")
             ok_any = False
             continue
+
+        # Patch high-churn runtime facts (must happen before schema validation + build_model evidence checks).
+        if scope == "openclaw-runtime/ops":
+            _patch_openclaw_runtime_proposal(ws=ws, scope_dir=scope_dir, proposal_path=proposal_path)
 
         # Validate proposal schema (fail closed)
         prop_schema = skill_dir / "references" / "proposal.schema.json"
@@ -178,7 +366,7 @@ def main() -> int:
             continue
 
         # Phase 2 apply: write tmp_model -> model.json atomically by calling build_model again against real path.
-        # (We re-run build_model to avoid copying an unvalidated file; it re-validates citations.
+        # (We re-run build_model to avoid copying an unvalidated file; it re-validates citations.)
         code, out, err = sh(
             [
                 sys.executable,

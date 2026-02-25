@@ -344,6 +344,105 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         # sanity: output is one block
         self.assertLess(out.count("\n\n\n"), 2)
 
+    def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
+        # Build a minimal workspace layout.
+        ws = self.root
+        (ws / "tmp" / "connect-dots" / "runs").mkdir(parents=True, exist_ok=True)
+
+        run_id = "t-0001"
+        scope_dir = ws / "tmp" / "connect-dots" / "runs" / run_id / "openclaw-runtime" / "ops"
+        scope_dir.mkdir(parents=True, exist_ok=True)
+
+        # Provide a fake OpenClaw config outside the workspace and point the script to it.
+        cfg = {
+            "agents": {
+                "defaults": {
+                    "model": {
+                        "primary": "openai-codex/gpt-5.2",
+                        "fallbacks": [
+                            "openrouter/openai/gpt-5.2",
+                            "openai-codex/gpt-5.1-codex-mini",
+                        ],
+                    },
+                    "heartbeat": {"model": "openrouter/google/gemini-2.0-flash-lite-001"},
+                }
+            }
+        }
+        cfg_path = ws / "fake-openclaw.json"
+        cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+
+        # Proposal includes a stale routing fact; nightly_run should rewrite it to cite runtime-routing.txt
+        # and filter out OpenRouter OpenAI/Anthropic fallbacks.
+        proposal = {
+            "scope": "openclaw-runtime/ops",
+            "generatedAt": "2026-02-22T00:00:00+01:00",
+            "items": {
+                "confirmed_facts": [
+                    {
+                        "id": "ops-routing-routine-check",
+                        "fact": "model.routing_routine_check",
+                        "value": "stale",
+                        "domain": "openclaw",
+                        "ttl_days": 120,
+                        "evidence": [
+                            {
+                                "path": "memory/does-not-matter.md",
+                                "lines": "L1-L1",
+                                "quote": "stale",
+                                "ts": "2026-02-22T00:00:00+01:00",
+                            }
+                        ],
+                    }
+                ],
+                "hypotheses": [],
+                "open_loops": [],
+                "candidate_moves": [],
+            },
+        }
+        (scope_dir / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
+
+        old = os.environ.get("OPENCLAW_CONFIG_PATH")
+        os.environ["OPENCLAW_CONFIG_PATH"] = str(cfg_path)
+        try:
+            code, out, err = run(
+                [
+                    "python3",
+                    str(SCRIPTS / "nightly_run.py"),
+                    "--workspace",
+                    str(ws),
+                    "--phase",
+                    "1",
+                    "--scopes",
+                    "openclaw-runtime/ops",
+                    "--run-id",
+                    run_id,
+                ],
+                cwd=str(ws),
+            )
+        finally:
+            if old is None:
+                os.environ.pop("OPENCLAW_CONFIG_PATH", None)
+            else:
+                os.environ["OPENCLAW_CONFIG_PATH"] = old
+
+        self.assertEqual(code, 0, msg=err)
+
+        snap = scope_dir / "runtime-routing.txt"
+        self.assertTrue(snap.exists())
+
+        patched = json.loads((scope_dir / "proposal.json").read_text(encoding="utf-8"))
+        facts = patched["items"]["confirmed_facts"]
+        self.assertEqual(len(facts), 1)
+        v = facts[0]["value"]
+        self.assertIn("primary=openai-codex/gpt-5.2", v)
+        self.assertIn("openai-codex/gpt-5.1-codex-mini", v)
+        self.assertNotIn("openrouter/openai", v)
+
+        # Evidence must point to the workspace snapshot file.
+        ev = facts[0]["evidence"][0]
+        self.assertTrue(ev["path"].startswith("tmp/connect-dots/runs/"))
+        self.assertIn("runtime-routing.txt", ev["path"])
+
 
 if __name__ == "__main__":
     unittest.main()
