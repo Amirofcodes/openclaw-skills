@@ -382,6 +382,59 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("REFUSED:", err)
 
+    def test_feedback_store_and_score_recommendation_suppression(self):
+        ws = self.root
+        feedback_path = ws / "feedback.json"
+        lessons_path = ws / "lessons.json"
+        anti_path = ws / "anti.json"
+        run_path = ws / "run-score.json"
+
+        lessons_path.write_text(json.dumps({"lessons": [{
+            "id": "lesson-1",
+            "status": "active",
+            "scope": ["repos"],
+            "pattern": "Keep repo review path.",
+            "signals": ["repo_review"],
+            "evidence_strength": 0.8,
+            "applies_when": [],
+            "avoid_when": [],
+            "created_at": "t",
+            "updated_at": "t",
+            "source_runs": ["a", "b"]
+        }]}), encoding="utf-8")
+        anti_path.write_text(json.dumps({"anti_patterns": []}), encoding="utf-8")
+        run_path.write_text(json.dumps({
+            "run_id": "run-score-1",
+            "mode": "nightly",
+            "trigger": "nightly_inactivity_gate",
+            "created_at": "t",
+            "status": "success",
+            "notes": "",
+            "validation": {"schema_ok": True, "citations_ok": True, "policy_ok": True},
+            "scopes": [{
+                "scope": "repos",
+                "status": "success",
+                "signals": ["repo_review"],
+                "hypothesis": {"statement": "x", "confidence": 0.7, "evidence": [{"path": "memory/2026-02-22.md", "lines": "L1-L1", "quote": "JD prefers concise communication."}]},
+                "proposed_action": {"kind": "proposal", "summary": "x"},
+                "lane": "safe-local-proposal",
+                "blast_radius_estimate": {"class": "local-analysis", "justification": "x"},
+                "validation": {"schema_ok": True, "citations_ok": True, "policy_ok": True},
+                "outcome": {"status": "silent", "notes": "x"}
+            }]
+        }), encoding="utf-8")
+
+        code, out, err = run(["python3", str(SCRIPTS / "feedback_store.py"), "--store", str(feedback_path), "--run-id", "run-score-1", "--scope", "repos", "--signal-key", "repos|safe-local-proposal|proposal|repo_review", "--verdict", "not-useful"], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        code, out, err = run(["python3", str(SCRIPTS / "feedback_store.py"), "--store", str(feedback_path), "--run-id", "run-score-2", "--scope", "repos", "--signal-key", "repos|safe-local-proposal|proposal|repo_review", "--verdict", "not-useful"], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+
+        code, out, err = run(["python3", str(SCRIPTS / "score_recommendation.py"), "--run", str(run_path), "--lessons", str(lessons_path), "--anti-patterns", str(anti_path), "--feedback", str(feedback_path)], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        scored = json.loads(out)
+        self.assertEqual(scored["decisions"][0]["suppressed"], True)
+        self.assertEqual(scored["decisions"][0]["reason"], "repeated_negative_feedback")
+
     def test_write_run_record_creates_valid_run_json(self):
         ws = self.root
         run_id = "t-runrecord"
@@ -390,6 +443,12 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         (scope_dir / "proposal.json").write_text("{}\n", encoding="utf-8")
         (scope_dir / "diff.txt").write_text("(no material changes)\n", encoding="utf-8")
         (scope_dir / "error.log").write_text("", encoding="utf-8")
+        lessons_path = ws / "lessons.json"
+        anti_path = ws / "anti.json"
+        feedback_path = ws / "feedback.json"
+        lessons_path.write_text(json.dumps({"lessons": []}), encoding="utf-8")
+        anti_path.write_text(json.dumps({"anti_patterns": []}), encoding="utf-8")
+        feedback_path.write_text(json.dumps({"feedback": []}), encoding="utf-8")
 
         code, out, err = run(
             [
@@ -403,6 +462,12 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
                 "nightly",
                 "--trigger",
                 "nightly_inactivity_gate",
+                "--lessons",
+                str(lessons_path),
+                "--anti-patterns",
+                str(anti_path),
+                "--feedback",
+                str(feedback_path),
                 "--scope",
                 "repos:success",
             ],
@@ -414,6 +479,7 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(run_json["scopes"][0]["scope"], "repos")
         self.assertEqual(run_json["scopes"][0]["lane"], "safe-local-proposal")
         self.assertEqual(run_json["scopes"][0]["blast_radius_estimate"]["class"], "local-analysis")
+        self.assertIn("recommendation_score", run_json["scopes"][0])
 
     def test_update_lessons_promotes_after_second_distinct_run(self):
         ws = self.root

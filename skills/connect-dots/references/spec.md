@@ -130,6 +130,7 @@ Artifacts:
 - Run schema: `references/run.schema.json`
 - Lessons schema: `references/lessons.schema.json`
 - Anti-patterns schema: `references/anti-patterns.schema.json`
+- Feedback schema: `references/feedback.schema.json`
 - Builder: `scripts/build_model.py`
 - Consent mutations: `scripts/consent_mutations.py`
 - Diff: `scripts/model_diff.py`
@@ -138,6 +139,8 @@ Artifacts:
 - Run-record writer: `scripts/write_run_record.py`
 - Lessons updater: `scripts/update_lessons.py`
 - Anti-patterns updater: `scripts/update_anti_patterns.py`
+- Feedback store: `scripts/feedback_store.py`
+- Recommendation scorer: `scripts/score_recommendation.py`
 
 ## 11) "Show assumptions about me" (locked)
 Sections + strict caps:

@@ -76,6 +76,7 @@ Schemas:
 - `references/run.schema.json`
 - `references/lessons.schema.json`
 - `references/anti-patterns.schema.json`
+- `references/feedback.schema.json`
 
 ## Nightly run workflow (silent)
 When invoked by an internal scheduler message (e.g., “connect-dots nightly run”):

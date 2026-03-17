@@ -21,6 +21,7 @@ from typing import Any, Dict, List
 
 from _lib import atomic_write_json, load_json, now_iso, validate_or_die
 from policy_guard import enforce_policy
+from score_recommendation import score_scope
 
 ALLOWED_SCOPES = {
     "user-profile/preferences",
@@ -178,6 +179,9 @@ def main() -> int:
     ap.add_argument("--status", choices=["success", "partial", "failed", "skipped"], default=None)
     ap.add_argument("--note", default="")
     ap.add_argument("--scope", action="append", default=[], help="Format: <scope>:<success|failed|skipped>")
+    ap.add_argument("--lessons")
+    ap.add_argument("--anti-patterns")
+    ap.add_argument("--feedback")
     ap.add_argument(
         "--schema",
         default=str(Path(__file__).resolve().parent.parent / "references" / "run.schema.json"),
@@ -199,6 +203,17 @@ def main() -> int:
         scope_name, scope_status = raw.rsplit(":", 1)
         scopes.append(build_scope_record(workspace=workspace, run_dir=run_dir, scope=scope_name, status=scope_status))
         scope_statuses.append(scope_status)
+
+    lessons = load_json(Path(args.lessons), default={"lessons": []}) if args.lessons else {"lessons": []}
+    anti_patterns = load_json(Path(args.anti_patterns), default={"anti_patterns": []}) if args.anti_patterns else {"anti_patterns": []}
+    feedback = load_json(Path(args.feedback), default={"feedback": []}) if args.feedback else {"feedback": []}
+    for scope_run in scopes:
+        decision = score_scope(scope_run, lessons, anti_patterns, feedback)
+        scope_run["recommendation_score"] = {
+            "score": decision["score"],
+            "suppressed": decision["suppressed"],
+            "reason": decision["reason"],
+        }
 
     effective_status = args.status or top_level_status(scope_statuses)
 

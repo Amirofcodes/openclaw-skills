@@ -231,6 +231,7 @@ Add these:
 ### Phase E — usefulness tuning
 - incorporate explicit confirmations/denials and repeated outcomes
 - improve ranking of recommendation types
+- suppress patterns with repeated negative feedback or anti-pattern collisions
 
 ## 11) Minimal implementation checklist
 1. Add a `run.schema.json` reference.

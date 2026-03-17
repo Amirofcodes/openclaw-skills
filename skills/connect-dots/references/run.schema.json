@@ -135,6 +135,16 @@
             "diff": { "type": "string" },
             "error_log": { "type": "string" }
           }
+        },
+        "recommendation_score": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["score", "suppressed", "reason"],
+          "properties": {
+            "score": { "type": "number", "minimum": 0, "maximum": 1 },
+            "suppressed": { "type": "boolean" },
+            "reason": { "type": "string", "minLength": 1 }
+          }
         }
       }
     }

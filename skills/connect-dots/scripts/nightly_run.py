@@ -415,6 +415,12 @@ def main() -> int:
         "nightly_inactivity_gate",
         "--note",
         "Deterministic nightly bridge run record emitted by nightly_run.py.",
+        "--lessons",
+        str(model_root / "insights" / "lessons.json"),
+        "--anti-patterns",
+        str(model_root / "insights" / "anti-patterns.json"),
+        "--feedback",
+        str(model_root / "insights" / "feedback.json"),
     ]
     for scope_name, scope_status in scope_statuses:
         run_record_cmd.extend(["--scope", f"{scope_name}:{scope_status}"])

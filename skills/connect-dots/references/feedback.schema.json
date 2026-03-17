@@ -1,0 +1,29 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "connect-dots feedback store",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["feedback"],
+  "properties": {
+    "feedback": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/feedbackItem" }
+    }
+  },
+  "definitions": {
+    "feedbackItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "run_id", "scope", "signal_key", "verdict", "created_at"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "run_id": { "type": "string", "minLength": 1 },
+        "scope": { "type": "string", "minLength": 1 },
+        "signal_key": { "type": "string", "minLength": 1 },
+        "verdict": { "type": "string", "enum": ["useful", "not-useful", "confirmed", "denied"] },
+        "note": { "type": "string" },
+        "created_at": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}
