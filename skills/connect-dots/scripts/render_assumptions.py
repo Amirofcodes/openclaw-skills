@@ -19,6 +19,8 @@ import json
 import sys
 from datetime import datetime, timezone
 
+from policy_guard import enforce_policy
+
 
 def _now_dt() -> datetime:
     return datetime.now(timezone.utc).astimezone()
@@ -121,6 +123,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     ap.add_argument("--prev")
+    ap.add_argument("--approved", action="store_true")
+    ap.add_argument("--external", action="store_true")
+    ap.add_argument("--service-change", action="store_true")
     args = ap.parse_args()
 
     try:
@@ -131,6 +136,21 @@ def main():
         return 2
 
     scope = model.get("scope", "(unknown)")
+    decision = enforce_policy(
+        scope=scope,
+        action_kind="surface-brief",
+        user_facing=True,
+        external=bool(args.external),
+        service_change=bool(args.service_change),
+        approved=bool(args.approved),
+    )
+    if not decision.get("allowed"):
+        print(
+            f"REFUSED: lane={decision.get('lane')} blast_radius={decision.get('blast_radius')} reason={decision.get('reason')}",
+            file=sys.stderr,
+        )
+        return 2
+
     now = _now_dt()
     gen = now.isoformat(timespec="seconds")
 

@@ -226,6 +226,7 @@ Add these:
 ### Phase D — scoring + lanes
 - compute lane + blast radius before surfacing
 - refuse outputs that violate lane policy
+- use a deterministic policy guard instead of ad-hoc per-script lane labels
 
 ### Phase E — usefulness tuning
 - incorporate explicit confirmations/denials and repeated outcomes

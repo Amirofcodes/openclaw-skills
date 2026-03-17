@@ -344,6 +344,44 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         # sanity: output is one block
         self.assertLess(out.count("\n\n\n"), 2)
 
+    def test_policy_guard_classifies_and_refuses_external_surface_without_approval(self):
+        code, out, err = run([
+            "python3",
+            str(SCRIPTS / "policy_guard.py"),
+            "--scope",
+            "repos",
+            "--action-kind",
+            "surface-brief",
+            "--user-facing",
+            "--external",
+        ])
+        self.assertNotEqual(code, 0)
+        self.assertIn('"lane": "approval-required"', out)
+        self.assertIn('"blast_radius": "external-facing"', out)
+
+    def test_render_assumptions_refuses_external_surface_without_approval(self):
+        model = {
+            "scope": "user-profile/preferences",
+            "updatedAt": "now",
+            "meta": {},
+            "confirmed_facts": [],
+            "hypotheses": [],
+            "stale_items": [],
+            "open_loops": [],
+            "candidate_moves": [],
+            "do_not_store": [],
+        }
+        self.model_path.write_text(json.dumps(model), encoding="utf-8")
+        code, out, err = run([
+            "python3",
+            str(SCRIPTS / "render_assumptions.py"),
+            "--model",
+            str(self.model_path),
+            "--external",
+        ])
+        self.assertEqual(code, 2)
+        self.assertIn("REFUSED:", err)
+
     def test_write_run_record_creates_valid_run_json(self):
         ws = self.root
         run_id = "t-runrecord"

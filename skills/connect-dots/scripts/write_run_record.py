@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from _lib import atomic_write_json, load_json, now_iso, validate_or_die
+from policy_guard import enforce_policy
 
 ALLOWED_SCOPES = {
     "user-profile/preferences",
@@ -30,27 +31,18 @@ ALLOWED_SCOPES = {
 DEFAULT_SCOPE_PROFILES = {
     "user-profile/preferences": {
         "signals": ["nightly_sensemaking"],
-        "lane": "observe-only",
-        "blast_class": "memory-only",
-        "blast_justification": "Only internal connect-dots model artifacts are read or updated for this scope.",
         "action_kind": "silent-update",
         "action_summary": "Refresh the internal user-profile model from validated evidence.",
         "hypothesis_statement": "Recent interactions may refine the internal user-profile model.",
     },
     "openclaw-runtime/ops": {
         "signals": ["nightly_sensemaking", "runtime_health_review"],
-        "lane": "observe-only",
-        "blast_class": "runtime-checks",
-        "blast_justification": "This scope summarizes runtime evidence and artifacts without changing services.",
         "action_kind": "silent-update",
         "action_summary": "Refresh the internal runtime-ops model from validated evidence.",
         "hypothesis_statement": "Recent runtime evidence may update the internal operational picture.",
     },
     "repos": {
         "signals": ["nightly_sensemaking", "repo_review"],
-        "lane": "safe-local-proposal",
-        "blast_class": "local-analysis",
-        "blast_justification": "This scope analyzes repo/project state and writes only internal artifacts or proposals.",
         "action_kind": "proposal",
         "action_summary": "Refresh the internal repos model and prepare local-only follow-up proposals if needed.",
         "hypothesis_statement": "Recent repo evidence may reveal updated blockers, loops, or candidate moves.",
@@ -108,6 +100,27 @@ def build_scope_record(*, workspace: Path, run_dir: Path, scope: str, status: st
         "skipped": "skipped",
     }[status]
 
+    action_kind = profile["action_kind"] if status != "skipped" else "none"
+    policy = enforce_policy(
+        scope=scope,
+        action_kind=action_kind,
+        user_facing=False,
+        external=False,
+        service_change=False,
+        approved=False,
+    )
+    policy_ok = bool(policy.get("allowed"))
+    blast_class = policy.get("blast_radius") or "docs-only"
+    lane = policy.get("lane") or "approval-required"
+    blast_justification = {
+        "memory-only": "Only internal connect-dots memory artifacts are touched for this scope.",
+        "docs-only": "This path only creates or reasons about local docs/proposals.",
+        "local-analysis": "This scope analyzes local repo/project state and writes only internal artifacts or proposals.",
+        "runtime-checks": "This scope summarizes runtime evidence without changing services.",
+        "service-touching": "This path would affect runtime/service state and therefore needs approval.",
+        "external-facing": "This path would affect an external surface and therefore needs approval.",
+    }[blast_class]
+
     record: Dict[str, Any] = {
         "scope": scope,
         "status": status,
@@ -125,13 +138,13 @@ def build_scope_record(*, workspace: Path, run_dir: Path, scope: str, status: st
             ],
         },
         "proposed_action": {
-            "kind": profile["action_kind"] if status != "skipped" else "none",
+            "kind": action_kind,
             "summary": profile["action_summary"] if status != "skipped" else "No action taken for this scope in this run.",
         },
-        "lane": profile["lane"],
+        "lane": lane,
         "blast_radius_estimate": {
-            "class": profile["blast_class"],
-            "justification": profile["blast_justification"],
+            "class": blast_class,
+            "justification": blast_justification,
         },
         "validation": {
             "schema_ok": schema_ok,
@@ -140,7 +153,7 @@ def build_scope_record(*, workspace: Path, run_dir: Path, scope: str, status: st
         },
         "outcome": {
             "status": outcome_status,
-            "notes": notes,
+            "notes": notes if policy_ok else f"{notes} Policy guard: {policy.get('reason')}",
         },
     }
 

@@ -65,6 +65,7 @@ Scripts:
 - `scripts/consent_mutations.py` — apply consent operations (don’t store / forget / confirm / deny)
 - `scripts/model_diff.py` — diff snapshots (for “what changed”)
 - `scripts/validate_model.py` — JSON Schema validation
+- `scripts/policy_guard.py` — deterministically classify blast radius + lane and refuse policy-violating recommendation paths
 - `scripts/write_run_record.py` — write deterministic per-run `run.json` artifacts for observability
 - `scripts/update_lessons.py` — upsert internal lessons from validated run records
 - `scripts/update_anti_patterns.py` — upsert internal anti-patterns from failed or invalid run records

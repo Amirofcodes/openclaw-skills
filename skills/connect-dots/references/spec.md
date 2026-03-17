@@ -134,6 +134,7 @@ Artifacts:
 - Consent mutations: `scripts/consent_mutations.py`
 - Diff: `scripts/model_diff.py`
 - Validator: `scripts/validate_model.py`
+- Policy guard: `scripts/policy_guard.py`
 - Run-record writer: `scripts/write_run_record.py`
 - Lessons updater: `scripts/update_lessons.py`
 - Anti-patterns updater: `scripts/update_anti_patterns.py`
