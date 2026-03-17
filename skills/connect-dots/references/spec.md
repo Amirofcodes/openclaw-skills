@@ -141,6 +141,7 @@ Artifacts:
 - Anti-patterns updater: `scripts/update_anti_patterns.py`
 - Feedback store: `scripts/feedback_store.py`
 - Recommendation scorer: `scripts/score_recommendation.py`
+- Doctor/audit script: `scripts/doctor.py`
 
 ## 11) "Show assumptions about me" (locked)
 Sections + strict caps:

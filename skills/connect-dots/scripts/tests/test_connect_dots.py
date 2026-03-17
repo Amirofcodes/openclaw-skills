@@ -565,6 +565,72 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(anti["anti_patterns"][0]["severity"], "high")
         self.assertIn("schema_failure", anti["anti_patterns"][0]["trigger_signals"])
 
+    def test_doctor_reports_suppressed_patterns_and_stale_lessons(self):
+        ws = self.root
+        insights = ws / "memory" / "internal" / "connect-dots" / "insights"
+        insights.mkdir(parents=True, exist_ok=True)
+        (ws / "tmp" / "connect-dots" / "runs" / "r1").mkdir(parents=True, exist_ok=True)
+
+        lessons = {
+            "lessons": [{
+                "id": "lesson-old",
+                "status": "active",
+                "scope": ["repos"],
+                "pattern": "x",
+                "signals": ["repo_review"],
+                "evidence_strength": 0.8,
+                "applies_when": [],
+                "avoid_when": [],
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "source_runs": ["a", "b"]
+            }]
+        }
+        anti = {
+            "anti_patterns": [
+                {"id": "a1", "scope": ["repos"], "pattern": "x", "trigger_signals": ["repo_review"], "severity": "medium", "created_at": "t", "updated_at": "t", "source_runs": ["1"]},
+                {"id": "a2", "scope": ["repos"], "pattern": "y", "trigger_signals": ["repo_review"], "severity": "medium", "created_at": "t", "updated_at": "t", "source_runs": ["2"]}
+            ]
+        }
+        feedback = {
+            "feedback": [
+                {"id": "f1", "run_id": "r1", "scope": "repos", "signal_key": "repos|safe-local-proposal|proposal|repo_review", "verdict": "not-useful", "created_at": "t"},
+                {"id": "f2", "run_id": "r2", "scope": "repos", "signal_key": "repos|safe-local-proposal|proposal|repo_review", "verdict": "not-useful", "created_at": "t"}
+            ]
+        }
+        run_json = {
+            "run_id": "r1",
+            "mode": "nightly",
+            "trigger": "nightly_inactivity_gate",
+            "created_at": "2026-03-17T00:00:00+00:00",
+            "status": "partial",
+            "notes": "",
+            "validation": {"schema_ok": True, "citations_ok": True, "policy_ok": True},
+            "scopes": [{
+                "scope": "repos",
+                "status": "success",
+                "signals": ["repo_review"],
+                "hypothesis": {"statement": "x", "confidence": 0.7, "evidence": [{"path": "memory/2026-02-22.md", "lines": "L1-L1", "quote": "JD prefers concise communication."}]},
+                "proposed_action": {"kind": "proposal", "summary": "x"},
+                "lane": "safe-local-proposal",
+                "blast_radius_estimate": {"class": "local-analysis", "justification": "x"},
+                "validation": {"schema_ok": True, "citations_ok": True, "policy_ok": True},
+                "outcome": {"status": "silent", "notes": "x"},
+                "recommendation_score": {"score": 0.3, "suppressed": True, "reason": "repeated_negative_feedback"}
+            }]
+        }
+        (insights / "lessons.json").write_text(json.dumps(lessons), encoding="utf-8")
+        (insights / "anti-patterns.json").write_text(json.dumps(anti), encoding="utf-8")
+        (insights / "feedback.json").write_text(json.dumps(feedback), encoding="utf-8")
+        ((ws / "tmp" / "connect-dots" / "runs" / "r1") / "run.json").write_text(json.dumps(run_json), encoding="utf-8")
+
+        code, out, err = run(["python3", str(SCRIPTS / "doctor.py"), "--workspace", str(ws)], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        self.assertIn("connect-dots doctor", out)
+        self.assertIn("lesson-old", out)
+        self.assertIn("repo_review", out)
+        self.assertIn("repeated_negative_feedback", out)
+
     def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
         # Build a minimal workspace layout.
         ws = self.root

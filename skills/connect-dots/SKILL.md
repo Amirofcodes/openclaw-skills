@@ -69,6 +69,9 @@ Scripts:
 - `scripts/write_run_record.py` — write deterministic per-run `run.json` artifacts for observability
 - `scripts/update_lessons.py` — upsert internal lessons from validated run records
 - `scripts/update_anti_patterns.py` — upsert internal anti-patterns from failed or invalid run records
+- `scripts/feedback_store.py` — persist explicit usefulness / confirmation feedback
+- `scripts/score_recommendation.py` — score and suppress recommendation patterns from lessons, anti-patterns, and feedback
+- `scripts/doctor.py` — audit stale lessons, anti-pattern collisions, suppressed patterns, feedback mix, and recent failures
 
 Schemas:
 - `references/proposal.schema.json`
