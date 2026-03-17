@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "connect-dots run record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "mode",
+    "trigger",
+    "created_at",
+    "status",
+    "scopes",
+    "validation"
+  ],
+  "properties": {
+    "run_id": { "type": "string", "minLength": 1 },
+    "mode": { "type": "string", "enum": ["nightly", "daytime", "explicit-audit"] },
+    "trigger": { "type": "string", "minLength": 1 },
+    "created_at": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["success", "partial", "failed", "skipped"] },
+    "notes": { "type": "string" },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_ok", "citations_ok", "policy_ok"],
+      "properties": {
+        "schema_ok": { "type": "boolean" },
+        "citations_ok": { "type": "boolean" },
+        "policy_ok": { "type": "boolean" }
+      }
+    },
+    "scopes": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/scopeRun" }
+    }
+  },
+  "definitions": {
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "lines", "quote"],
+      "properties": {
+        "path": { "type": "string" },
+        "lines": { "type": "string", "pattern": "^L[0-9]+-L[0-9]+$" },
+        "quote": { "type": "string", "minLength": 1 },
+        "ts": { "type": "string" }
+      }
+    },
+    "hypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "confidence", "evidence"],
+      "properties": {
+        "statement": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/definitions/evidence" }
+        }
+      }
+    },
+    "proposedAction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "summary"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["none", "refresh-question", "proposal", "silent-update", "surface-brief"] },
+        "summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "blastRadius": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["class", "justification"],
+      "properties": {
+        "class": {
+          "type": "string",
+          "enum": ["memory-only", "docs-only", "local-analysis", "runtime-checks", "service-touching", "external-facing"]
+        },
+        "justification": { "type": "string", "minLength": 1 }
+      }
+    },
+    "scopeRun": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "scope",
+        "status",
+        "lane",
+        "blast_radius_estimate",
+        "validation"
+      ],
+      "properties": {
+        "scope": {
+          "type": "string",
+          "enum": ["user-profile/preferences", "openclaw-runtime/ops", "repos"]
+        },
+        "status": { "type": "string", "enum": ["success", "failed", "skipped"] },
+        "signals": { "type": "array", "items": { "type": "string" } },
+        "hypothesis": { "$ref": "#/definitions/hypothesis" },
+        "proposed_action": { "$ref": "#/definitions/proposedAction" },
+        "lane": {
+          "type": "string",
+          "enum": ["observe-only", "suggest-only", "safe-local-proposal", "approval-required"]
+        },
+        "blast_radius_estimate": { "$ref": "#/definitions/blastRadius" },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["schema_ok", "citations_ok", "policy_ok"],
+          "properties": {
+            "schema_ok": { "type": "boolean" },
+            "citations_ok": { "type": "boolean" },
+            "policy_ok": { "type": "boolean" }
+          }
+        },
+        "outcome": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "notes"],
+          "properties": {
+            "status": { "type": "string", "enum": ["pending", "accepted", "rejected", "expired", "applied", "silent", "failed", "skipped"] },
+            "notes": { "type": "string" }
+          }
+        },
+        "artifacts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proposal": { "type": "string" },
+            "pre_model": { "type": "string" },
+            "post_model": { "type": "string" },
+            "diff": { "type": "string" },
+            "error_log": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

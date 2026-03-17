@@ -344,6 +344,39 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         # sanity: output is one block
         self.assertLess(out.count("\n\n\n"), 2)
 
+    def test_write_run_record_creates_valid_run_json(self):
+        ws = self.root
+        run_id = "t-runrecord"
+        scope_dir = ws / "tmp" / "connect-dots" / "runs" / run_id / "repos"
+        scope_dir.mkdir(parents=True, exist_ok=True)
+        (scope_dir / "proposal.json").write_text("{}\n", encoding="utf-8")
+        (scope_dir / "diff.txt").write_text("(no material changes)\n", encoding="utf-8")
+        (scope_dir / "error.log").write_text("", encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "write_run_record.py"),
+                "--workspace",
+                str(ws),
+                "--run-id",
+                run_id,
+                "--mode",
+                "nightly",
+                "--trigger",
+                "nightly_inactivity_gate",
+                "--scope",
+                "repos:success",
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        run_json = json.loads((ws / "tmp" / "connect-dots" / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
+        self.assertEqual(run_json["status"], "success")
+        self.assertEqual(run_json["scopes"][0]["scope"], "repos")
+        self.assertEqual(run_json["scopes"][0]["lane"], "safe-local-proposal")
+        self.assertEqual(run_json["scopes"][0]["blast_radius_estimate"]["class"], "local-analysis")
+
     def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
         # Build a minimal workspace layout.
         ws = self.root
@@ -442,6 +475,13 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         ev = facts[0]["evidence"][0]
         self.assertTrue(ev["path"].startswith("tmp/connect-dots/runs/"))
         self.assertIn("runtime-routing.txt", ev["path"])
+
+        # A phase-B run record should also be emitted.
+        run_json = json.loads((ws / "tmp" / "connect-dots" / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
+        self.assertEqual(run_json["mode"], "nightly")
+        self.assertEqual(run_json["trigger"], "nightly_inactivity_gate")
+        self.assertEqual(run_json["status"], "success")
+        self.assertEqual(run_json["scopes"][0]["scope"], "openclaw-runtime/ops")
 
 
 if __name__ == "__main__":

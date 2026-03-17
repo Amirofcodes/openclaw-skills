@@ -127,10 +127,12 @@ Best compromise (trust + auditability):
 Artifacts:
 - Proposal schema: `references/proposal.schema.json`
 - Model schema: `references/model.schema.json`
+- Run schema: `references/run.schema.json`
 - Builder: `scripts/build_model.py`
 - Consent mutations: `scripts/consent_mutations.py`
 - Diff: `scripts/model_diff.py`
 - Validator: `scripts/validate_model.py`
+- Run-record writer: `scripts/write_run_record.py`
 
 ## 11) "Show assumptions about me" (locked)
 Sections + strict caps:

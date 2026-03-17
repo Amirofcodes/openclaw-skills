@@ -65,10 +65,12 @@ Scripts:
 - `scripts/consent_mutations.py` — apply consent operations (don’t store / forget / confirm / deny)
 - `scripts/model_diff.py` — diff snapshots (for “what changed”)
 - `scripts/validate_model.py` — JSON Schema validation
+- `scripts/write_run_record.py` — write deterministic per-run `run.json` artifacts for observability
 
 Schemas:
 - `references/proposal.schema.json`
 - `references/model.schema.json`
+- `references/run.schema.json`
 
 ## Nightly run workflow (silent)
 When invoked by an internal scheduler message (e.g., “connect-dots nightly run”):

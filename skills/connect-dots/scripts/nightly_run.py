@@ -9,7 +9,10 @@ This script is intended to be called from an isolated cron agentTurn.
 It is deterministic about file paths + artifacts, but relies on the LLM to produce
 proposal JSON content.
 
-Artifacts per run (per scope):
+Artifacts per run:
+- run record:    tmp/connect-dots/runs/<runId>/run.json
+
+Artifacts per scope:
 - proposal JSON: tmp/connect-dots/runs/<runId>/<scope>/proposal.json
 - pre snapshot:  tmp/connect-dots/runs/<runId>/<scope>/model.pre.json (if exists)
 - post snapshot: tmp/connect-dots/runs/<runId>/<scope>/model.post.json (if applied)
@@ -265,6 +268,7 @@ def main() -> int:
     # For each scope, expect the LLM to have already written a proposal to a known location OR
     # the agentTurn message should instruct it to do so.
     ok_any = True
+    scope_statuses: list[tuple[str, str]] = []
 
     for scope in scopes:
         scope_dir = resolve_scope_dir(runs_root, scope)
@@ -280,6 +284,7 @@ def main() -> int:
         # The agent must create proposal.json; if missing, fail closed for this scope.
         if not proposal_path.exists():
             write_text(err_path, f"ERROR: proposal.json missing for scope {scope}\n")
+            scope_statuses.append((scope, "failed"))
             ok_any = False
             continue
 
@@ -302,6 +307,7 @@ def main() -> int:
         )
         if code != 0:
             write_text(err_path, f"ERROR: proposal schema invalid\n{err}\n")
+            scope_statuses.append((scope, "failed"))
             ok_any = False
             continue
 
@@ -336,6 +342,7 @@ def main() -> int:
         )
         if code != 0:
             write_text(err_path, f"ERROR: build_model failed (dry-run)\n{err}\n")
+            scope_statuses.append((scope, "failed"))
             ok_any = False
             continue
 
@@ -355,6 +362,7 @@ def main() -> int:
             )
             if code != 0:
                 write_text(err_path, f"ERROR: model_diff failed\n{d_err}\n")
+                scope_statuses.append((scope, "failed"))
                 ok_any = False
                 continue
             write_text(diff_path, d_out)
@@ -363,6 +371,7 @@ def main() -> int:
 
         if phase == 1 or not apply_allowed:
             # No writes to model.json
+            scope_statuses.append((scope, "success"))
             continue
 
         # Phase 2 apply: write tmp_model -> model.json atomically by calling build_model again against real path.
@@ -387,8 +396,33 @@ def main() -> int:
         )
         if code != 0:
             write_text(err_path, f"ERROR: build_model failed (apply)\n{err}\n")
+            scope_statuses.append((scope, "failed"))
             ok_any = False
             continue
+
+        scope_statuses.append((scope, "success"))
+
+    run_record_cmd = [
+        sys.executable,
+        str(scripts_dir / "write_run_record.py"),
+        "--workspace",
+        str(ws),
+        "--run-id",
+        run_id,
+        "--mode",
+        "nightly",
+        "--trigger",
+        "nightly_inactivity_gate",
+        "--note",
+        "Deterministic nightly bridge run record emitted by nightly_run.py.",
+    ]
+    for scope_name, scope_status in scope_statuses:
+        run_record_cmd.extend(["--scope", f"{scope_name}:{scope_status}"])
+
+    code, out, err = sh(run_record_cmd, cwd=ws, timeout=60)
+    if code != 0:
+        write_text(runs_root / "run.error.log", f"ERROR: write_run_record failed\n{err}\n")
+        ok_any = False
 
     return 0 if ok_any else 1
 

@@ -215,6 +215,7 @@ Add these:
 
 ### Phase B — emit run records
 - write `run.json` for nightly/daytime flows
+- validate with `references/run.schema.json`
 - no lessons extraction yet
 
 ### Phase C — lessons + anti-patterns
