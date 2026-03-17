@@ -142,6 +142,7 @@ Artifacts:
 - Feedback store: `scripts/feedback_store.py`
 - Recommendation scorer: `scripts/score_recommendation.py`
 - Doctor/audit script: `scripts/doctor.py`
+- Review checkpoint script: `scripts/review_checkpoint.py`
 
 ## 11) "Show assumptions about me" (locked)
 Sections + strict caps:

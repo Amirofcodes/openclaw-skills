@@ -631,6 +631,12 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertIn("repo_review", out)
         self.assertIn("repeated_negative_feedback", out)
 
+        code, out, err = run(["python3", str(SCRIPTS / "review_checkpoint.py"), "--workspace", str(ws), "--label", "2-week review"], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        self.assertIn("connect-dots 2-week review", out)
+        self.assertIn("Review questions", out)
+        self.assertIn("Recommended spot checks", out)
+
     def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
         # Build a minimal workspace layout.
         ws = self.root

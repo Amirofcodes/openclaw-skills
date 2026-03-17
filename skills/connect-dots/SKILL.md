@@ -72,6 +72,7 @@ Scripts:
 - `scripts/feedback_store.py` — persist explicit usefulness / confirmation feedback
 - `scripts/score_recommendation.py` — score and suppress recommendation patterns from lessons, anti-patterns, and feedback
 - `scripts/doctor.py` — audit stale lessons, anti-pattern collisions, suppressed patterns, feedback mix, and recent failures
+- `scripts/review_checkpoint.py` — package the 2-week review into one command with prompts + follow-up checks
 
 Schemas:
 - `references/proposal.schema.json`
