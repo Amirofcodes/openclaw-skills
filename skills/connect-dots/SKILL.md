@@ -131,4 +131,5 @@ Hard UX rules: one message; strict caps; every non-trivial item includes citatio
 - Consent: “Okay to store this as a preference? (store once / store always / don’t store)”
 
 ## References
-- See `references/spec.md` for schema details, TTL/expiry rules, and the autonomy matrix.
+- See `references/spec.md` for the current deterministic core, schemas, TTL/expiry rules, and autonomy matrix.
+- See `references/vnext-upgrade-spec.md` for the planned upgrade: run records, lessons, anti-patterns, blast-radius classes, approval lanes, and rollout phases.

@@ -1,6 +1,8 @@
 # connect-dots — Spec (locked)
 
-This is the implementation contract for the internal "trusted chief-of-staff" user-intelligence skill.
+This is the implementation contract for the current deterministic core of the internal "trusted chief-of-staff" user-intelligence skill.
+
+For the next planned layer (run records, lessons, anti-patterns, approval lanes, blast-radius classes), see `references/vnext-upgrade-spec.md`.
 
 ## 1) Goals
 - Extract **meaning** from user actions/requests across sessions to improve assistant responses and proactivity.
