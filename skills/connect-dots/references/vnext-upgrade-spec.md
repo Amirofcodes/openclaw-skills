@@ -221,6 +221,7 @@ Add these:
 ### Phase C — lessons + anti-patterns
 - add append/update scripts
 - keep them internal only
+- promote lessons only after corroboration across at least 2 distinct runs
 
 ### Phase D — scoring + lanes
 - compute lane + blast radius before surfacing

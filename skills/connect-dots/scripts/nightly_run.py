@@ -423,6 +423,35 @@ def main() -> int:
     if code != 0:
         write_text(runs_root / "run.error.log", f"ERROR: write_run_record failed\n{err}\n")
         ok_any = False
+    else:
+        run_json = runs_root / "run.json"
+        insights_root = model_root / "insights"
+        if not disabled_flag.exists():
+            lessons_cmd = [
+                sys.executable,
+                str(scripts_dir / "update_lessons.py"),
+                "--run",
+                str(run_json),
+                "--store",
+                str(insights_root / "lessons.json"),
+            ]
+            code, out, err = sh(lessons_cmd, cwd=ws, timeout=60)
+            if code != 0:
+                write_text(runs_root / "lessons.error.log", f"ERROR: update_lessons failed\n{err}\n")
+                ok_any = False
+
+            anti_patterns_cmd = [
+                sys.executable,
+                str(scripts_dir / "update_anti_patterns.py"),
+                "--run",
+                str(run_json),
+                "--store",
+                str(insights_root / "anti-patterns.json"),
+            ]
+            code, out, err = sh(anti_patterns_cmd, cwd=ws, timeout=60)
+            if code != 0:
+                write_text(runs_root / "anti-patterns.error.log", f"ERROR: update_anti_patterns failed\n{err}\n")
+                ok_any = False
 
     return 0 if ok_any else 1
 

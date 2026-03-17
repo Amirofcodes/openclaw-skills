@@ -66,11 +66,15 @@ Scripts:
 - `scripts/model_diff.py` — diff snapshots (for “what changed”)
 - `scripts/validate_model.py` — JSON Schema validation
 - `scripts/write_run_record.py` — write deterministic per-run `run.json` artifacts for observability
+- `scripts/update_lessons.py` — upsert internal lessons from validated run records
+- `scripts/update_anti_patterns.py` — upsert internal anti-patterns from failed or invalid run records
 
 Schemas:
 - `references/proposal.schema.json`
 - `references/model.schema.json`
 - `references/run.schema.json`
+- `references/lessons.schema.json`
+- `references/anti-patterns.schema.json`
 
 ## Nightly run workflow (silent)
 When invoked by an internal scheduler message (e.g., “connect-dots nightly run”):

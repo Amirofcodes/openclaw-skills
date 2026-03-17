@@ -377,6 +377,90 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(run_json["scopes"][0]["lane"], "safe-local-proposal")
         self.assertEqual(run_json["scopes"][0]["blast_radius_estimate"]["class"], "local-analysis")
 
+    def test_update_lessons_promotes_after_second_distinct_run(self):
+        ws = self.root
+        insights = ws / "memory" / "internal" / "connect-dots" / "insights"
+        lessons_path = insights / "lessons.json"
+        run1 = ws / "run1.json"
+        run2 = ws / "run2.json"
+
+        base_scope = {
+            "scope": "repos",
+            "status": "success",
+            "signals": ["nightly_sensemaking", "repo_review"],
+            "hypothesis": {
+                "statement": "Recent repo evidence may reveal updated blockers, loops, or candidate moves.",
+                "confidence": 0.7,
+                "evidence": [{"path": "memory/2026-02-22.md", "lines": "L1-L1", "quote": "JD prefers concise communication."}]
+            },
+            "proposed_action": {"kind": "proposal", "summary": "Refresh repo insights."},
+            "lane": "safe-local-proposal",
+            "blast_radius_estimate": {"class": "local-analysis", "justification": "Local only."},
+            "validation": {"schema_ok": True, "citations_ok": True, "policy_ok": True},
+            "outcome": {"status": "silent", "notes": "ok"}
+        }
+        run_payload = {
+            "run_id": "run-1",
+            "mode": "nightly",
+            "trigger": "nightly_inactivity_gate",
+            "created_at": "2026-03-17T00:00:00+00:00",
+            "status": "success",
+            "notes": "test",
+            "validation": {"schema_ok": True, "citations_ok": True, "policy_ok": True},
+            "scopes": [base_scope],
+        }
+        run1.write_text(json.dumps(run_payload), encoding="utf-8")
+        code, out, err = run(["python3", str(SCRIPTS / "update_lessons.py"), "--run", str(run1), "--store", str(lessons_path)], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        lessons = json.loads(lessons_path.read_text(encoding="utf-8"))
+        self.assertEqual(lessons["lessons"][0]["status"], "pending")
+        self.assertEqual(len(lessons["lessons"][0]["source_runs"]), 1)
+
+        run_payload["run_id"] = "run-2"
+        run2.write_text(json.dumps(run_payload), encoding="utf-8")
+        code, out, err = run(["python3", str(SCRIPTS / "update_lessons.py"), "--run", str(run2), "--store", str(lessons_path)], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        lessons = json.loads(lessons_path.read_text(encoding="utf-8"))
+        self.assertEqual(lessons["lessons"][0]["status"], "active")
+        self.assertEqual(len(lessons["lessons"][0]["source_runs"]), 2)
+
+    def test_update_anti_patterns_records_failed_scope(self):
+        ws = self.root
+        insights = ws / "memory" / "internal" / "connect-dots" / "insights"
+        anti_path = insights / "anti-patterns.json"
+        run1 = ws / "run-fail.json"
+        run_payload = {
+            "run_id": "run-fail-1",
+            "mode": "nightly",
+            "trigger": "nightly_inactivity_gate",
+            "created_at": "2026-03-17T00:00:00+00:00",
+            "status": "failed",
+            "notes": "test",
+            "validation": {"schema_ok": False, "citations_ok": True, "policy_ok": True},
+            "scopes": [{
+                "scope": "openclaw-runtime/ops",
+                "status": "failed",
+                "signals": ["runtime_health_review"],
+                "hypothesis": {
+                    "statement": "Recent runtime evidence may update the internal operational picture.",
+                    "confidence": 0.2,
+                    "evidence": [{"path": "memory/2026-02-22.md", "lines": "L1-L1", "quote": "JD prefers concise communication."}]
+                },
+                "proposed_action": {"kind": "silent-update", "summary": "Refresh ops insights."},
+                "lane": "observe-only",
+                "blast_radius_estimate": {"class": "runtime-checks", "justification": "Read only."},
+                "validation": {"schema_ok": False, "citations_ok": True, "policy_ok": True},
+                "outcome": {"status": "failed", "notes": "bad schema"}
+            }],
+        }
+        run1.write_text(json.dumps(run_payload), encoding="utf-8")
+        code, out, err = run(["python3", str(SCRIPTS / "update_anti_patterns.py"), "--run", str(run1), "--store", str(anti_path)], cwd=str(ws))
+        self.assertEqual(code, 0, msg=err)
+        anti = json.loads(anti_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(anti["anti_patterns"]), 1)
+        self.assertEqual(anti["anti_patterns"][0]["severity"], "high")
+        self.assertIn("schema_failure", anti["anti_patterns"][0]["trigger_signals"])
+
     def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
         # Build a minimal workspace layout.
         ws = self.root
@@ -482,6 +566,14 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(run_json["trigger"], "nightly_inactivity_gate")
         self.assertEqual(run_json["status"], "success")
         self.assertEqual(run_json["scopes"][0]["scope"], "openclaw-runtime/ops")
+
+        # Phase C: internal insights stores should be updated.
+        lessons = json.loads((ws / "memory" / "internal" / "connect-dots" / "insights" / "lessons.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(lessons["lessons"]), 1)
+        self.assertEqual(lessons["lessons"][0]["status"], "pending")
+        anti_path = ws / "memory" / "internal" / "connect-dots" / "insights" / "anti-patterns.json"
+        anti = json.loads(anti_path.read_text(encoding="utf-8"))
+        self.assertEqual(anti["anti_patterns"], [])
 
 
 if __name__ == "__main__":
