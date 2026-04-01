@@ -145,3 +145,4 @@ Hard UX rules: one message; strict caps; every non-trivial item includes citatio
 ## References
 - See `references/spec.md` for the current deterministic core, schemas, TTL/expiry rules, and autonomy matrix.
 - See `references/vnext-upgrade-spec.md` for the planned upgrade: run records, lessons, anti-patterns, blast-radius classes, approval lanes, and rollout phases.
+- See `references/pending-decisions.md` when working on deferred-decision capture, decision-policy learning, or integration with `docs/assistant/PENDING_DECISIONS.md`.
