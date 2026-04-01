@@ -73,6 +73,7 @@ Scripts:
 - `scripts/score_recommendation.py` — score and suppress recommendation patterns from lessons, anti-patterns, and feedback
 - `scripts/doctor.py` — audit stale lessons, anti-pattern collisions, suppressed patterns, feedback mix, and recent failures
 - `scripts/review_checkpoint.py` — package the 2-week review into one command with prompts + follow-up checks
+- `scripts/pending_decisions.py` — parse the pending-decisions canon and validate/render proposal-mode deferred-decision candidates
 
 Schemas:
 - `references/proposal.schema.json`
@@ -146,3 +147,4 @@ Hard UX rules: one message; strict caps; every non-trivial item includes citatio
 - See `references/spec.md` for the current deterministic core, schemas, TTL/expiry rules, and autonomy matrix.
 - See `references/vnext-upgrade-spec.md` for the planned upgrade: run records, lessons, anti-patterns, blast-radius classes, approval lanes, and rollout phases.
 - See `references/pending-decisions.md` when working on deferred-decision capture, decision-policy learning, or integration with `docs/assistant/PENDING_DECISIONS.md`.
+- Candidate schema for proposal-mode deferred decisions: `references/pending-decision.schema.json`.

@@ -27,6 +27,11 @@ Phase 1 should stay simple.
    - "defer this"
 4. generate a structured candidate/proposal for a new PD entry
 
+Current deterministic helper path:
+- `scripts/pending_decisions.py parse` — parse active/resolved PD entries
+- `scripts/pending_decisions.py prepare-proposal` — validate a structured candidate, dedupe it against canon, and render a reviewable row + markdown block
+- `references/pending-decision.schema.json` — proposal-mode candidate schema
+
 It should **not** yet:
 - silently rewrite the canon from vague inference
 - promote a one-off approval into broad autonomy

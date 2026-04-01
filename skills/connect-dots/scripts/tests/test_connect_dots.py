@@ -637,6 +637,114 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertIn("Review questions", out)
         self.assertIn("Recommended spot checks", out)
 
+    def test_pending_decisions_parse_reads_active_and_resolved_sections(self):
+        ws = self.root
+        pd = ws / "docs" / "assistant"
+        pd.mkdir(parents=True, exist_ok=True)
+        (pd / "PENDING_DECISIONS.md").write_text(
+            """# Pending Decisions (Canon)\n\n## Active decisions\n\n| ID | Topic/Project | Decision | Status | Revisit trigger |\n|---:|---|---|---|---|\n| PD-0001 | Foo | Decide foo | deferred | After X |\n\n## Resolved decisions\n\n| ID | Topic/Project | Decision | Status | Resolution note |\n|---:|---|---|---|---|\n| PD-0002 | Bar | Decide bar | decided | Done |\n""",
+            encoding="utf-8",
+        )
+
+        code, out, err = run(
+            ["python3", str(SCRIPTS / "pending_decisions.py"), "parse", "--workspace", str(ws)],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        data = json.loads(out)
+        self.assertEqual(data["active"][0]["id"], "PD-0001")
+        self.assertEqual(data["resolved"][0]["id"], "PD-0002")
+
+    def test_pending_decisions_prepare_proposal_renders_next_id_and_markdown(self):
+        ws = self.root
+        pd = ws / "docs" / "assistant"
+        pd.mkdir(parents=True, exist_ok=True)
+        (pd / "PENDING_DECISIONS.md").write_text(
+            """# Pending Decisions (Canon)\n\n## Active decisions\n\n| ID | Topic/Project | Decision | Status | Revisit trigger |\n|---:|---|---|---|---|\n| PD-0001 | Foo | Decide foo | deferred | After X |\n\n## Resolved decisions\n\n| ID | Topic/Project | Decision | Status | Resolution note |\n|---:|---|---|---|---|\n| — | — | None yet | — | Move items here only when they become `decided` or `dropped` |\n""",
+            encoding="utf-8",
+        )
+        src = ws / "memory" / "2026-02-22.md"
+        src.write_text("we'll decide later after the forum debrief\n", encoding="utf-8")
+
+        candidate = {
+            "topic": "Career / forum follow-up",
+            "decision": "Choose the next primary lane after the forum",
+            "status": "deferred",
+            "revisit_trigger": "After JD sends the forum debrief",
+            "owner": "JD",
+            "defer_signal": "we'll decide later",
+            "context_links": ["memory/2026-03-25-prefecture-jobs.md#L53-L88"],
+            "source_evidence": {
+                "path": "memory/2026-02-22.md",
+                "lines": "L1-L1",
+                "quote": "we'll decide later",
+                "ts": "2026-02-22T00:00:00+01:00",
+            },
+        }
+        candidate_path = ws / "candidate.json"
+        candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "pending_decisions.py"),
+                "prepare-proposal",
+                "--workspace",
+                str(ws),
+                "--candidate",
+                str(candidate_path),
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        data = json.loads(out)
+        self.assertEqual(data["status"], "proposal-ready")
+        self.assertEqual(data["next_id"], "PD-0002")
+        self.assertIn("Career / forum follow-up", data["entry_markdown"])
+
+    def test_pending_decisions_prepare_proposal_rejects_missing_defer_signal(self):
+        ws = self.root
+        pd = ws / "docs" / "assistant"
+        pd.mkdir(parents=True, exist_ok=True)
+        (pd / "PENDING_DECISIONS.md").write_text(
+            """# Pending Decisions (Canon)\n\n## Active decisions\n\n| ID | Topic/Project | Decision | Status | Revisit trigger |\n|---:|---|---|---|---|\n| PD-0001 | Foo | Decide foo | deferred | After X |\n\n## Resolved decisions\n\n| ID | Topic/Project | Decision | Status | Resolution note |\n|---:|---|---|---|---|\n| — | — | None yet | — | Move items here only when they become `decided` or `dropped` |\n""",
+            encoding="utf-8",
+        )
+        src = ws / "memory" / "2026-02-22.md"
+        src.write_text("we should evaluate this soon\n", encoding="utf-8")
+
+        candidate = {
+            "topic": "Career / forum follow-up",
+            "decision": "Choose the next primary lane after the forum",
+            "status": "deferred",
+            "revisit_trigger": "After JD sends the forum debrief",
+            "owner": "JD",
+            "defer_signal": "evaluate this soon",
+            "source_evidence": {
+                "path": "memory/2026-02-22.md",
+                "lines": "L1-L1",
+                "quote": "evaluate this soon",
+                "ts": "2026-02-22T00:00:00+01:00",
+            },
+        }
+        candidate_path = ws / "candidate-bad.json"
+        candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "pending_decisions.py"),
+                "prepare-proposal",
+                "--workspace",
+                str(ws),
+                "--candidate",
+                str(candidate_path),
+            ],
+            cwd=str(ws),
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("explicit defer signal", err)
+
     def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
         # Build a minimal workspace layout.
         ws = self.root
