@@ -16,6 +16,7 @@ from pathlib import Path
 
 from _lib import load_json
 from doctor import build_report, render_text, _load_runs
+from pending_decisions import PENDING_DECISIONS_PATH, parse_pending_decisions, summarize_pending_decisions
 
 
 def main() -> int:
@@ -32,6 +33,8 @@ def main() -> int:
     lessons = load_json(insights / "lessons.json", default={"lessons": []})
     anti = load_json(insights / "anti-patterns.json", default={"anti_patterns": []})
     feedback = load_json(insights / "feedback.json", default={"feedback": []})
+    pd_entries = parse_pending_decisions(ws / PENDING_DECISIONS_PATH)
+    pd_summary = summarize_pending_decisions(pd_entries)
 
     report = build_report(runs=runs, lessons=lessons, anti=anti, feedback=feedback, stale_days=args.stale_days)
 
@@ -40,12 +43,23 @@ def main() -> int:
     print()
     print(render_text(report), end="")
 
+    print("\nPending decisions")
+    print(f"- active: {pd_summary['active_total']}")
+    print(f"- resolved: {pd_summary['resolved_total']}")
+    if pd_summary["dueish"]:
+        print("- likely ready to revisit:")
+        for item in pd_summary["dueish"][:5]:
+            print(f"  - {item['id']} · {item['topic']} · {item['trigger']}")
+    else:
+        print("- likely ready to revisit: none")
+
     print("\nReview questions")
     print("- Are active lessons actually useful, or just accumulating?")
     print("- Are suppressed patterns correct, or are we suppressing something valuable?")
     print("- Do anti-pattern collisions reveal a real bug or just a noisy threshold?")
     print("- Is feedback volume high enough to trust the usefulness scorer yet?")
     print("- Did any failed/partial runs hide a regression we should fix now?")
+    print("- Are any active pending decisions now due enough to revisit or convert into action?")
 
     print("\nRecommended spot checks")
     print(f"- python3 scripts/doctor.py --workspace {ws} --json")
@@ -53,6 +67,7 @@ def main() -> int:
     print(f"- cat {ws}/memory/internal/connect-dots/insights/lessons.json")
     print(f"- cat {ws}/memory/internal/connect-dots/insights/anti-patterns.json")
     print(f"- cat {ws}/memory/internal/connect-dots/insights/feedback.json")
+    print(f"- python3 scripts/pending_decisions.py parse --workspace {ws}")
 
     if report["recent_failures"]:
         print("\nCallout: there are recent failed/partial runs. Fix those before trusting the scoring layer too much.")

@@ -147,6 +147,31 @@ def _render_entry(entry_id: str, candidate: Dict[str, Any]) -> Tuple[str, str]:
     return row, "\n".join(lines) + "\n"
 
 
+def summarize_pending_decisions(entries: Dict[str, List[Dict[str, str]]]) -> Dict[str, Any]:
+    active = entries.get("active") or []
+    resolved = entries.get("resolved") or []
+
+    dueish_patterns = [
+        re.compile(r"\bnow\b", re.IGNORECASE),
+        re.compile(r"\barrived\b", re.IGNORECASE),
+        re.compile(r"\bafter jd sends\b", re.IGNORECASE),
+        re.compile(r"\bafter forum debrief\b", re.IGNORECASE),
+        re.compile(r"\bafter jd sends the forum debrief\b", re.IGNORECASE),
+    ]
+
+    dueish = []
+    for item in active:
+        trig = item.get("trigger") or ""
+        if any(p.search(trig) for p in dueish_patterns):
+            dueish.append(item)
+
+    return {
+        "active_total": len(active),
+        "resolved_total": len(resolved),
+        "dueish": dueish,
+    }
+
+
 def cmd_parse(args: argparse.Namespace) -> int:
     ws = Path(args.workspace).resolve()
     pd_path = ws / PENDING_DECISIONS_PATH

@@ -570,6 +570,12 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         insights = ws / "memory" / "internal" / "connect-dots" / "insights"
         insights.mkdir(parents=True, exist_ok=True)
         (ws / "tmp" / "connect-dots" / "runs" / "r1").mkdir(parents=True, exist_ok=True)
+        pd = ws / "docs" / "assistant"
+        pd.mkdir(parents=True, exist_ok=True)
+        (pd / "PENDING_DECISIONS.md").write_text(
+            """# Pending Decisions (Canon)\n\n## Active decisions\n\n| ID | Topic/Project | Decision | Status | Revisit trigger |\n|---:|---|---|---|---|\n| PD-0001 | Connect-dots | Tune scoring | deferred | Run the 2-week review checkpoint now that the target window has arrived |\n\n## Resolved decisions\n\n| ID | Topic/Project | Decision | Status | Resolution note |\n|---:|---|---|---|---|\n| PD-0002 | Ops | Old thing | decided | Done |\n""",
+            encoding="utf-8",
+        )
 
         lessons = {
             "lessons": [{
@@ -634,6 +640,8 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         code, out, err = run(["python3", str(SCRIPTS / "review_checkpoint.py"), "--workspace", str(ws), "--label", "2-week review"], cwd=str(ws))
         self.assertEqual(code, 0, msg=err)
         self.assertIn("connect-dots 2-week review", out)
+        self.assertIn("Pending decisions", out)
+        self.assertIn("PD-0001", out)
         self.assertIn("Review questions", out)
         self.assertIn("Recommended spot checks", out)
 
