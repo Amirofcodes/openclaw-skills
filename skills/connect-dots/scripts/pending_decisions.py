@@ -172,6 +172,104 @@ def summarize_pending_decisions(entries: Dict[str, List[Dict[str, str]]]) -> Dic
     }
 
 
+def _match_defer_signal(*texts: str) -> str | None:
+    for text in texts:
+        if not text:
+            continue
+        for pat in DEFER_PATTERNS:
+            m = pat.search(text)
+            if m:
+                return m.group(0)
+    return None
+
+
+def _topic_for_item(scope: str, item: Dict[str, Any]) -> str:
+    domain = (item.get("domain") or "").strip()
+    if domain:
+        return domain.replace("_", " ").replace("-", " / ")
+    return scope.replace("/", " / ")
+
+
+def _trigger_for_item(item: Dict[str, Any]) -> str | None:
+    for key in ("confirm", "why", "statement"):
+        value = (item.get(key) or "").strip()
+        if not value:
+            continue
+        if key == "statement":
+            m = re.search(r"\bafter\b.+", value, re.IGNORECASE)
+            if m:
+                return m.group(0).strip().rstrip(".")
+        elif key == "confirm":
+            return value.rstrip("?").strip()
+        else:
+            m = re.search(r"\b(after|when|once)\b.+", value, re.IGNORECASE)
+            if m:
+                return m.group(0).strip().rstrip(".")
+    return None
+
+
+def candidate_from_item(*, scope: str, item: Dict[str, Any]) -> Dict[str, Any] | None:
+    signal = _match_defer_signal(item.get("statement", ""), item.get("why", ""), item.get("confirm", ""))
+    if not signal:
+        return None
+    evidence = (item.get("evidence") or [])
+    if not evidence:
+        return None
+    trigger = _trigger_for_item(item)
+    if not trigger:
+        return None
+
+    statement = (item.get("statement") or "").strip()
+    candidate = {
+        "topic": _topic_for_item(scope, item),
+        "decision": statement.rstrip("."),
+        "status": "deferred",
+        "revisit_trigger": trigger,
+        "owner": "JD",
+        "defer_signal": signal,
+        "source_evidence": evidence[0],
+    }
+    if item.get("why"):
+        candidate["notes"] = item["why"]
+    return candidate
+
+
+def prepare_candidates_from_proposal(*, workspace: Path, proposal: Dict[str, Any], existing: Dict[str, List[Dict[str, str]]], schema_path: Path) -> List[Dict[str, Any]]:
+    scope = proposal.get("scope") or "unknown"
+    out = []
+    items = proposal.get("items") or {}
+    next_id_num = int(_next_id(existing).split("-")[1])
+
+    for section in ("open_loops", "candidate_moves"):
+        for item in items.get(section) or []:
+            if not isinstance(item, dict):
+                continue
+            candidate = candidate_from_item(scope=scope, item=item)
+            if not candidate:
+                continue
+            validate_or_die(candidate, schema_path, "pending decision candidate")
+            verify_evidence_sources([candidate["source_evidence"]], workspace)
+            duplicate, duplicate_id = _dedupe(candidate, existing)
+            entry_id = f"PD-{next_id_num:04d}"
+            if not duplicate:
+                next_id_num += 1
+            row, entry_md = _render_entry(entry_id, candidate)
+            out.append(
+                {
+                    "status": "duplicate" if duplicate else "proposal-ready",
+                    "duplicate": duplicate,
+                    "duplicate_id": duplicate_id,
+                    "next_id": entry_id,
+                    "row": row,
+                    "entry_markdown": entry_md,
+                    "candidate": candidate,
+                    "section": section,
+                    "source_item_id": item.get("id"),
+                }
+            )
+    return out
+
+
 def cmd_parse(args: argparse.Namespace) -> int:
     ws = Path(args.workspace).resolve()
     pd_path = ws / PENDING_DECISIONS_PATH
@@ -220,6 +318,32 @@ def cmd_prepare_proposal(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_extract_from_proposal(args: argparse.Namespace) -> int:
+    ws = Path(args.workspace).resolve()
+    pd_path = ws / PENDING_DECISIONS_PATH
+    proposal_path = Path(args.proposal).resolve()
+    schema_path = Path(args.schema).resolve() if args.schema else (Path(__file__).resolve().parents[1] / "references" / "pending-decision.schema.json")
+
+    proposal = load_json(proposal_path, default=None)
+    if not isinstance(proposal, dict):
+        raise SystemExit("proposal must be a JSON object")
+
+    existing = parse_pending_decisions(pd_path)
+    candidates = prepare_candidates_from_proposal(workspace=ws, proposal=proposal, existing=existing, schema_path=schema_path)
+    result = {
+        "generated_at": now_iso(),
+        "proposal": str(proposal_path),
+        "count": len(candidates),
+        "items": candidates,
+    }
+    if args.output:
+        out_path = Path(args.output).resolve()
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -234,6 +358,13 @@ def main() -> int:
     p_prepare.add_argument("--schema")
     p_prepare.add_argument("--output")
     p_prepare.set_defaults(func=cmd_prepare_proposal)
+
+    p_extract = sub.add_parser("extract-from-proposal")
+    p_extract.add_argument("--workspace", required=True)
+    p_extract.add_argument("--proposal", required=True)
+    p_extract.add_argument("--schema")
+    p_extract.add_argument("--output")
+    p_extract.set_defaults(func=cmd_extract_from_proposal)
 
     args = ap.parse_args()
     return args.func(args)

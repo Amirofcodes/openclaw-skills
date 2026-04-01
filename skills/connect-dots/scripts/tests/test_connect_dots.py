@@ -753,6 +753,130 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("explicit defer signal", err)
 
+    def test_pending_decisions_extract_from_proposal_emits_candidate_items(self):
+        ws = self.root
+        pd = ws / "docs" / "assistant"
+        pd.mkdir(parents=True, exist_ok=True)
+        (pd / "PENDING_DECISIONS.md").write_text(
+            """# Pending Decisions (Canon)\n\n## Active decisions\n\n| ID | Topic/Project | Decision | Status | Revisit trigger |\n|---:|---|---|---|---|\n| PD-0001 | Foo | Decide foo | deferred | After X |\n\n## Resolved decisions\n\n| ID | Topic/Project | Decision | Status | Resolution note |\n|---:|---|---|---|---|\n| PD-0002 | Bar | Decide bar | decided | Done |\n""",
+            encoding="utf-8",
+        )
+        src = ws / "memory" / "2026-02-22.md"
+        src.write_text("we'll decide later after the forum debrief\n", encoding="utf-8")
+        proposal = {
+            "scope": "repos",
+            "generatedAt": "2026-02-22T00:00:00+01:00",
+            "items": {
+                "confirmed_facts": [],
+                "hypotheses": [],
+                "open_loops": [
+                    {
+                        "id": "ol-1",
+                        "statement": "We'll decide later after the forum debrief whether ItemXlate runtime proof should happen first.",
+                        "domain": "ItemXlate / execution",
+                        "why": "After forum debrief and post-forum lane decision.",
+                        "confirm": "After forum debrief and post-forum lane decision?",
+                        "evidence": [
+                            {
+                                "path": "memory/2026-02-22.md",
+                                "lines": "L1-L1",
+                                "quote": "we'll decide later",
+                                "ts": "2026-02-22T00:00:00+01:00",
+                            }
+                        ],
+                    }
+                ],
+                "candidate_moves": [],
+            },
+        }
+        proposal_path = ws / "proposal.json"
+        out_path = ws / "candidates.json"
+        proposal_path.write_text(json.dumps(proposal), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "pending_decisions.py"),
+                "extract-from-proposal",
+                "--workspace",
+                str(ws),
+                "--proposal",
+                str(proposal_path),
+                "--output",
+                str(out_path),
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        data = json.loads(out)
+        self.assertEqual(data["count"], 1)
+        self.assertEqual(data["items"][0]["status"], "proposal-ready")
+        self.assertIn("ItemXlate / execution", data["items"][0]["entry_markdown"])
+
+    def test_nightly_run_emits_pending_decision_candidates_artifact(self):
+        ws = self.root
+        pd = ws / "docs" / "assistant"
+        pd.mkdir(parents=True, exist_ok=True)
+        (pd / "PENDING_DECISIONS.md").write_text(
+            """# Pending Decisions (Canon)\n\n## Active decisions\n\n| ID | Topic/Project | Decision | Status | Revisit trigger |\n|---:|---|---|---|---|\n| PD-0001 | Foo | Decide foo | deferred | After X |\n\n## Resolved decisions\n\n| ID | Topic/Project | Decision | Status | Resolution note |\n|---:|---|---|---|---|\n| PD-0002 | Bar | Decide bar | decided | Done |\n""",
+            encoding="utf-8",
+        )
+        (ws / "tmp" / "connect-dots" / "runs").mkdir(parents=True, exist_ok=True)
+        src = ws / "memory" / "2026-02-22.md"
+        src.write_text("we'll decide later after the forum debrief\n", encoding="utf-8")
+
+        run_id = "t-pd-0001"
+        scope_dir = ws / "tmp" / "connect-dots" / "runs" / run_id / "repos"
+        scope_dir.mkdir(parents=True, exist_ok=True)
+        proposal = {
+            "scope": "repos",
+            "generatedAt": "2026-02-22T00:00:00+01:00",
+            "items": {
+                "confirmed_facts": [],
+                "hypotheses": [],
+                "open_loops": [
+                    {
+                        "id": "ol-1",
+                        "statement": "We'll decide later after the forum debrief whether ItemXlate runtime proof should happen first.",
+                        "domain": "ItemXlate / execution",
+                        "why": "After forum debrief and post-forum lane decision.",
+                        "confirm": "After forum debrief and post-forum lane decision?",
+                        "evidence": [
+                            {
+                                "path": "memory/2026-02-22.md",
+                                "lines": "L1-L1",
+                                "quote": "we'll decide later",
+                                "ts": "2026-02-22T00:00:00+01:00",
+                            }
+                        ],
+                    }
+                ],
+                "candidate_moves": [],
+            },
+        }
+        (scope_dir / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "nightly_run.py"),
+                "--workspace",
+                str(ws),
+                "--phase",
+                "1",
+                "--scopes",
+                "repos",
+                "--run-id",
+                run_id,
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        candidates_path = scope_dir / "pending_decision_candidates.json"
+        self.assertTrue(candidates_path.exists())
+        data = json.loads(candidates_path.read_text(encoding="utf-8"))
+        self.assertEqual(data["count"], 1)
+
     def test_nightly_run_patches_runtime_routing_fact_with_workspace_snapshot(self):
         # Build a minimal workspace layout.
         ws = self.root

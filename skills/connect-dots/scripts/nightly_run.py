@@ -43,6 +43,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pending_decisions import PENDING_DECISIONS_PATH, parse_pending_decisions, prepare_candidates_from_proposal
+
 
 def now_id() -> str:
     return datetime.now(timezone.utc).astimezone().strftime("%Y%m%d-%H%M%S")
@@ -72,6 +74,30 @@ def dump_json(path: Path, obj: dict) -> None:
     with path.open("w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
         f.write("\n")
+
+
+def emit_pending_decision_candidates(*, ws: Path, scope_dir: Path, proposal_path: Path, err_path: Path, skill_dir: Path) -> None:
+    """Output-only bridge from proposal items to reviewable pending-decision candidates."""
+    try:
+        proposal = load_json(proposal_path)
+        existing = parse_pending_decisions(ws / PENDING_DECISIONS_PATH)
+        schema_path = skill_dir / "references" / "pending-decision.schema.json"
+        candidates = prepare_candidates_from_proposal(
+            workspace=ws,
+            proposal=proposal,
+            existing=existing,
+            schema_path=schema_path,
+        )
+        if candidates:
+            dump_json(scope_dir / "pending_decision_candidates.json", {
+                "generated_at": now_iso(),
+                "proposal": proposal_path.relative_to(ws).as_posix(),
+                "count": len(candidates),
+                "items": candidates,
+            })
+    except Exception as e:
+        prev = err_path.read_text(encoding="utf-8") if err_path.exists() else ""
+        write_text(err_path, prev + f"WARN: pending decision candidate extraction skipped: {e}\n")
 
 
 def resolve_scope_dir(runs_root: Path, scope: str) -> Path:
@@ -291,6 +317,14 @@ def main() -> int:
         # Patch high-churn runtime facts (must happen before schema validation + build_model evidence checks).
         if scope == "openclaw-runtime/ops":
             _patch_openclaw_runtime_proposal(ws=ws, scope_dir=scope_dir, proposal_path=proposal_path)
+
+        emit_pending_decision_candidates(
+            ws=ws,
+            scope_dir=scope_dir,
+            proposal_path=proposal_path,
+            err_path=err_path,
+            skill_dir=skill_dir,
+        )
 
         # Validate proposal schema (fail closed)
         prop_schema = skill_dir / "references" / "proposal.schema.json"

@@ -30,6 +30,7 @@ Phase 1 should stay simple.
 Current deterministic helper path:
 - `scripts/pending_decisions.py parse` — parse active/resolved PD entries
 - `scripts/pending_decisions.py prepare-proposal` — validate a structured candidate, dedupe it against canon, and render a reviewable row + markdown block
+- `scripts/pending_decisions.py extract-from-proposal` — scan proposal `open_loops` / `candidate_moves` for explicit defer-shaped items and emit proposal-mode PD candidates
 - `references/pending-decision.schema.json` — proposal-mode candidate schema
 
 It should **not** yet:
