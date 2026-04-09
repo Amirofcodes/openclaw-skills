@@ -9,13 +9,25 @@ from pathlib import Path
 from _lib import atomic_write_json, load_json, now_iso, validate_or_die
 
 
+VERDICT_ALIASES = {
+    "useful": "useful",
+    "not-useful": "not-useful",
+    "confirmed": "confirmed",
+    "denied": "denied",
+    "confirm": "confirmed",
+    "deny": "denied",
+    "too-noisy": "not-useful",
+    "wrong-timing": "not-useful",
+}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--store", required=True)
     ap.add_argument("--run-id", required=True)
     ap.add_argument("--scope", required=True)
     ap.add_argument("--signal-key", required=True)
-    ap.add_argument("--verdict", required=True, choices=["useful", "not-useful", "confirmed", "denied"])
+    ap.add_argument("--verdict", required=True, choices=sorted(VERDICT_ALIASES.keys()))
     ap.add_argument("--note", default="")
     ap.add_argument(
         "--schema",
@@ -26,13 +38,18 @@ def main() -> int:
     store_path = Path(args.store)
     data = load_json(store_path, default={"feedback": []})
     items = list(data.get("feedback") or [])
+    verdict = VERDICT_ALIASES[args.verdict]
+    note = args.note
+    if args.verdict != verdict:
+        alias_note = f"alias:{args.verdict}"
+        note = f"{alias_note}; {note}" if note else alias_note
     item = {
-        "id": f"fb-{args.run_id}-{args.scope}-{args.signal_key}-{args.verdict}",
+        "id": f"fb-{args.run_id}-{args.scope}-{args.signal_key}-{verdict}",
         "run_id": args.run_id,
         "scope": args.scope,
         "signal_key": args.signal_key,
-        "verdict": args.verdict,
-        "note": args.note,
+        "verdict": verdict,
+        "note": note,
         "created_at": now_iso(),
     }
     if not any(isinstance(x, dict) and x.get("id") == item["id"] for x in items):

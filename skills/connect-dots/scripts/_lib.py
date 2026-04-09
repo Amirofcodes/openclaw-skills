@@ -13,6 +13,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import jsonschema
 
 ISO_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+DATE_ONLY_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 LINES_RE = re.compile(r"^L(\d+)-L(\d+)$")
 
 
@@ -20,10 +21,19 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def ensure_aware(dt: datetime) -> datetime:
+    if dt.tzinfo is None or dt.utcoffset() is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone()
+
+
 def parse_iso(ts: str) -> datetime:
-    # Best-effort: accept any ISO-ish string python can parse.
+    # Best-effort: accept common ISO/date-only strings and always return a tz-aware datetime.
     try:
-        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        raw = (ts or "").strip()
+        if DATE_ONLY_RE.match(raw):
+            return ensure_aware(datetime.fromisoformat(raw))
+        return ensure_aware(datetime.fromisoformat(raw.replace("Z", "+00:00")))
     except Exception:
         # Fall back to "now" if it's garbage.
         return datetime.now(timezone.utc).astimezone()
@@ -82,6 +92,7 @@ def matches_do_not_store(text: str, dns: List[Dict[str, Any]]) -> Optional[Dict[
 
 def compute_recency_days(evidence: List[Dict[str, Any]], now: datetime) -> float:
     # Use the newest evidence timestamp we can parse (most recent).
+    now = ensure_aware(now)
     best = None
     for ev in evidence or []:
         ts = ev.get("ts")

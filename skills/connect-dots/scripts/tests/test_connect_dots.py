@@ -1,12 +1,17 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 SCRIPTS = Path(__file__).resolve().parents[1]
 REFS = SCRIPTS.parent / "references"
+sys.path.insert(0, str(SCRIPTS))
+
+from _lib import compute_recency_days, parse_iso
 
 
 def run(cmd, cwd=None):
@@ -79,6 +84,87 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(model["scope"], "user-profile/preferences")
         self.assertEqual(len(model["hypotheses"]), 1)
         self.assertIn("expires_at", model["hypotheses"][0])
+
+    def test_parse_iso_accepts_date_only_and_returns_tz_aware(self):
+        dt = parse_iso("2026-03-08")
+        self.assertEqual(dt.year, 2026)
+        self.assertEqual(dt.month, 3)
+        self.assertEqual(dt.day, 8)
+        self.assertIsNotNone(dt.tzinfo)
+        self.assertIsNotNone(dt.utcoffset())
+
+    def test_compute_recency_days_accepts_mixed_timestamp_formats(self):
+        now = datetime(2026, 3, 10, 0, 0, 0, tzinfo=timezone.utc)
+        evidence = [
+            {"ts": "2026-03-08"},
+            {"ts": "2026-03-09T12:00:00"},
+            {"ts": "2026-03-09T23:00:00+01:00"},
+            {"ts": "2026-03-09T20:00:00Z"},
+        ]
+        rec_days = compute_recency_days(evidence, now)
+        self.assertGreaterEqual(rec_days, 0.0)
+        self.assertLess(rec_days, 2.0)
+
+    def test_build_model_handles_date_only_evidence_timestamp_without_datetime_crash(self):
+        model = {
+            "scope": "repos",
+            "updatedAt": "2026-04-05T04:11:06+02:00",
+            "meta": {},
+            "confirmed_facts": [],
+            "hypotheses": [
+                {
+                    "id": "hyp.third_flagship_smart_port_allocator",
+                    "statement": "The most likely third flagship is Smart Port Allocator.",
+                    "confidence": 0.6,
+                    "first_seen": "2026-04-01T04:00:00+02:00",
+                    "last_seen": "2026-04-05T04:11:06+02:00",
+                    "expires_at": "2026-08-01T00:00:00+02:00",
+                    "status": "active",
+                    "evidence": [
+                        {"path": "memory/2026-02-22.md", "lines": "L1-L1", "quote": "JD prefers concise communication.", "ts": "2026-03-08T00:00:00+01:00"}
+                    ],
+                }
+            ],
+            "stale_items": [],
+            "open_loops": [],
+            "candidate_moves": [],
+            "do_not_store": [],
+        }
+        self.model_path.write_text(json.dumps(model), encoding="utf-8")
+
+        prop = self._proposal(scope="repos")
+        prop["items"]["hypotheses"].append(
+            {
+                "id": "hyp.third_flagship_smart_port_allocator",
+                "statement": "The most likely third flagship is Smart Port Allocator.",
+                "domain": "portfolio",
+                "why": "New repo work points toward Smart Port Allocator.",
+                "confirm": "Confirm the third flagship when JD wants to lock it.",
+                "ttl_days": 120,
+                "evidence": [
+                    {"path": "memory/2026-02-22.md", "lines": "L1-L1", "quote": "JD prefers concise communication.", "ts": "2026-03-08"}
+                ],
+            }
+        )
+        self.proposal_path.write_text(json.dumps(prop), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "build_model.py"),
+                "--scope",
+                "repos",
+                "--workspace",
+                str(self.root),
+                "--model",
+                str(self.model_path),
+                "--proposal",
+                str(self.proposal_path),
+            ]
+        )
+        self.assertEqual(code, 0, msg=err)
+        updated = json.loads(self.model_path.read_text(encoding="utf-8"))
+        self.assertEqual(updated["hypotheses"][0]["id"], "hyp.third_flagship_smart_port_allocator")
 
     def test_do_not_store_drops_matching_statement(self):
         # Seed model with do_not_store.
@@ -435,6 +521,32 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(scored["decisions"][0]["suppressed"], True)
         self.assertEqual(scored["decisions"][0]["reason"], "repeated_negative_feedback")
 
+    def test_feedback_store_accepts_alias_verdicts(self):
+        ws = self.root
+        feedback_path = ws / "feedback.json"
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "feedback_store.py"),
+                "--store",
+                str(feedback_path),
+                "--run-id",
+                "run-alias-1",
+                "--scope",
+                "repos",
+                "--signal-key",
+                "repos|safe-local-proposal|proposal|repo_review",
+                "--verdict",
+                "too-noisy",
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        stored = json.loads(feedback_path.read_text(encoding="utf-8"))
+        self.assertEqual(stored["feedback"][0]["verdict"], "not-useful")
+        self.assertIn("alias:too-noisy", stored["feedback"][0]["note"])
+
     def test_write_run_record_creates_valid_run_json(self):
         ws = self.root
         run_id = "t-runrecord"
@@ -480,6 +592,117 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         self.assertEqual(run_json["scopes"][0]["lane"], "safe-local-proposal")
         self.assertEqual(run_json["scopes"][0]["blast_radius_estimate"]["class"], "local-analysis")
         self.assertIn("recommendation_score", run_json["scopes"][0])
+
+    def test_write_run_record_uses_real_proposal_evidence_when_available(self):
+        ws = self.root
+        run_id = "t-runrecord-evidence"
+        scope_dir = ws / "tmp" / "connect-dots" / "runs" / run_id / "repos"
+        scope_dir.mkdir(parents=True, exist_ok=True)
+        proposal = {
+            "scope": "repos",
+            "generatedAt": "2026-03-17T00:00:00+00:00",
+            "items": {
+                "confirmed_facts": [],
+                "hypotheses": [
+                    {
+                        "id": "h1",
+                        "statement": "Repo review path is useful.",
+                        "evidence": [
+                            {
+                                "path": "memory/2026-02-22.md",
+                                "lines": "L1-L1",
+                                "quote": "JD prefers concise communication.",
+                                "ts": "2026-03-17T00:00:00+00:00",
+                            }
+                        ],
+                    }
+                ],
+                "open_loops": [],
+                "candidate_moves": [],
+            },
+        }
+        (scope_dir / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
+        (scope_dir / "diff.txt").write_text("(no material changes)\n", encoding="utf-8")
+        (scope_dir / "error.log").write_text("", encoding="utf-8")
+        lessons_path = ws / "lessons.json"
+        anti_path = ws / "anti.json"
+        feedback_path = ws / "feedback.json"
+        lessons_path.write_text(json.dumps({"lessons": []}), encoding="utf-8")
+        anti_path.write_text(json.dumps({"anti_patterns": []}), encoding="utf-8")
+        feedback_path.write_text(json.dumps({"feedback": []}), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "write_run_record.py"),
+                "--workspace",
+                str(ws),
+                "--run-id",
+                run_id,
+                "--mode",
+                "nightly",
+                "--trigger",
+                "nightly_inactivity_gate",
+                "--lessons",
+                str(lessons_path),
+                "--anti-patterns",
+                str(anti_path),
+                "--feedback",
+                str(feedback_path),
+                "--scope",
+                "repos:success",
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        run_json = json.loads((ws / "tmp" / "connect-dots" / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
+        ev = run_json["scopes"][0]["hypothesis"]["evidence"][0]
+        self.assertEqual(ev["path"], "memory/2026-02-22.md")
+        self.assertEqual(ev["quote"], "JD prefers concise communication.")
+
+    def test_write_run_record_classifies_citation_failure_from_error_log(self):
+        ws = self.root
+        run_id = "t-runrecord-citation-fail"
+        scope_dir = ws / "tmp" / "connect-dots" / "runs" / run_id / "repos"
+        scope_dir.mkdir(parents=True, exist_ok=True)
+        (scope_dir / "proposal.json").write_text("{}\n", encoding="utf-8")
+        (scope_dir / "error.log").write_text(
+            "evidence quote not found in cited range: memory/2026-02-22.md L1-L1\n",
+            encoding="utf-8",
+        )
+        lessons_path = ws / "lessons.json"
+        anti_path = ws / "anti.json"
+        feedback_path = ws / "feedback.json"
+        lessons_path.write_text(json.dumps({"lessons": []}), encoding="utf-8")
+        anti_path.write_text(json.dumps({"anti_patterns": []}), encoding="utf-8")
+        feedback_path.write_text(json.dumps({"feedback": []}), encoding="utf-8")
+
+        code, out, err = run(
+            [
+                "python3",
+                str(SCRIPTS / "write_run_record.py"),
+                "--workspace",
+                str(ws),
+                "--run-id",
+                run_id,
+                "--mode",
+                "nightly",
+                "--trigger",
+                "nightly_inactivity_gate",
+                "--lessons",
+                str(lessons_path),
+                "--anti-patterns",
+                str(anti_path),
+                "--feedback",
+                str(feedback_path),
+                "--scope",
+                "repos:failed",
+            ],
+            cwd=str(ws),
+        )
+        self.assertEqual(code, 0, msg=err)
+        run_json = json.loads((ws / "tmp" / "connect-dots" / "runs" / run_id / "run.json").read_text(encoding="utf-8"))
+        self.assertFalse(run_json["scopes"][0]["validation"]["citations_ok"])
 
     def test_update_lessons_promotes_after_second_distinct_run(self):
         ws = self.root

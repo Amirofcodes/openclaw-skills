@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import argparse
 import copy
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from _lib import (
@@ -38,6 +38,7 @@ from _lib import (
     load_json,
     now_iso,
     normalize_item_common,
+    parse_iso,
     validate_or_die,
     matches_do_not_store,
     verify_evidence_sources,
@@ -177,9 +178,7 @@ def main() -> int:
                     out["last_seen"] = now_dt.isoformat(timespec="seconds")
                     ttl_days = int(out.get("ttl_days") or default_ttl_days)
                     out.pop("ttl_days", None)
-                    out["expires_at"] = (
-                        now_dt + __import__("datetime").timedelta(days=max(1, ttl_days))
-                    ).isoformat(timespec="seconds")
+                    out["expires_at"] = (now_dt + timedelta(days=max(1, ttl_days))).isoformat(timespec="seconds")
                 else:
                     out.setdefault("last_seen", out.get("last_seen") or now_dt.isoformat(timespec="seconds"))
                     out.setdefault("expires_at", out.get("expires_at") or "9999-12-31T00:00:00+00:00")
@@ -230,7 +229,7 @@ def main() -> int:
 
     def is_expired(it):
         try:
-            exp = datetime.fromisoformat(it.get("expires_at").replace("Z", "+00:00"))
+            exp = parse_iso(it.get("expires_at") or "")
             return now_dt > exp
         except Exception:
             return False

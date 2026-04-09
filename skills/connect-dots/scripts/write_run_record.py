@@ -16,6 +16,7 @@ The script can be called multiple times for multiple scopes in one run.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -70,6 +71,87 @@ def top_level_status(scope_statuses: List[str]) -> str:
     return "partial"
 
 
+def _read_text(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
+def _classify_failure(*, workspace: Path, proposal: str | None, error_log: str | None, status: str) -> Dict[str, bool]:
+    schema_ok = proposal is not None
+    citations_ok = True
+
+    if status == "skipped":
+        return {"schema_ok": schema_ok, "citations_ok": True}
+    if status != "failed":
+        return {"schema_ok": schema_ok, "citations_ok": True}
+
+    text = _read_text(workspace / error_log) if error_log else ""
+    low = text.lower()
+
+    if not proposal or "proposal.json missing" in low or "proposal missing/empty" in low or "invalid proposal" in low:
+        schema_ok = False
+
+    citation_markers = [
+        "evidence missing path",
+        "evidence file not found",
+        "evidence line range out of bounds",
+        "evidence quote missing",
+        "evidence quote not found in cited range",
+        "citation validation failure",
+    ]
+    if any(marker in low for marker in citation_markers):
+        citations_ok = False
+
+    return {"schema_ok": schema_ok, "citations_ok": citations_ok}
+
+
+def _first_evidence_from_proposal(scope_dir: Path, workspace: Path) -> Dict[str, Any] | None:
+    proposal_path = scope_dir / "proposal.json"
+    proposal = load_json(proposal_path, default=None)
+    if not isinstance(proposal, dict):
+        return None
+    items = proposal.get("items") or {}
+    for section in ["confirmed_facts", "hypotheses", "open_loops", "candidate_moves"]:
+        for item in items.get(section) or []:
+            if not isinstance(item, dict):
+                continue
+            for ev in item.get("evidence") or []:
+                if not isinstance(ev, dict):
+                    continue
+                if ev.get("path") and ev.get("lines") and ev.get("quote"):
+                    out = {
+                        "path": ev["path"],
+                        "lines": ev["lines"],
+                        "quote": ev["quote"],
+                    }
+                    if ev.get("ts"):
+                        out["ts"] = ev["ts"]
+                    return out
+    return None
+
+
+def _fallback_evidence(*, workspace: Path, error_log: str | None, proposal: str | None) -> Dict[str, Any]:
+    if error_log:
+        full = workspace / error_log
+        lines = _read_text(full).splitlines()
+        for idx, line in enumerate(lines, start=1):
+            if line.strip():
+                return {
+                    "path": error_log,
+                    "lines": f"L{idx}-L{idx}",
+                    "quote": line.strip(),
+                    "ts": now_iso(),
+                }
+    return {
+        "path": proposal or "tmp/connect-dots/unknown",
+        "lines": "L1-L1",
+        "quote": "proposal artifact present",
+        "ts": now_iso(),
+    }
+
+
 def build_scope_record(*, workspace: Path, run_dir: Path, scope: str, status: str) -> Dict[str, Any]:
     if scope not in ALLOWED_SCOPES:
         raise SystemExit(f"unsupported scope: {scope}")
@@ -85,9 +167,11 @@ def build_scope_record(*, workspace: Path, run_dir: Path, scope: str, status: st
     diff = rel_if_exists(scope_dir / "diff.txt", workspace)
     err = rel_if_exists(scope_dir / "error.log", workspace)
 
-    schema_ok = proposal is not None
-    citations_ok = status != "failed"
+    validation = _classify_failure(workspace=workspace, proposal=proposal, error_log=err, status=status)
+    schema_ok = validation["schema_ok"]
+    citations_ok = validation["citations_ok"]
     policy_ok = True
+    evidence = _first_evidence_from_proposal(scope_dir, workspace) or _fallback_evidence(workspace=workspace, error_log=err, proposal=proposal)
 
     notes = {
         "success": "Scope completed with validated artifacts.",
@@ -129,14 +213,7 @@ def build_scope_record(*, workspace: Path, run_dir: Path, scope: str, status: st
         "hypothesis": {
             "statement": profile["hypothesis_statement"],
             "confidence": 0.7 if status == "success" else (0.35 if status == "skipped" else 0.2),
-            "evidence": [
-                {
-                    "path": proposal or err or "tmp/connect-dots/unknown",
-                    "lines": "L1-L1",
-                    "quote": "{",
-                    "ts": now_iso(),
-                }
-            ],
+            "evidence": [evidence],
         },
         "proposed_action": {
             "kind": action_kind,
