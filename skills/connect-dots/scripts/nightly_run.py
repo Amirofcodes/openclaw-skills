@@ -187,10 +187,73 @@ def _write_routing_snapshot(*, ws: Path, scope_dir: Path, r: dict) -> Path:
     return snap
 
 
-def _patch_openclaw_runtime_proposal(*, ws: Path, scope_dir: Path, proposal_path: Path) -> None:
-    """Ensure high-churn runtime routing facts are sourced from live config snapshots.
+def _read_connect_dots_nightly_job() -> dict:
+    """Read the live cron job that owns connect-dots nightly model overrides."""
+    jobs_path = os.environ.get("OPENCLAW_CRON_JOBS_PATH")
+    if jobs_path:
+        p = Path(jobs_path).expanduser().resolve()
+    else:
+        p = Path.home() / ".openclaw" / "cron" / "jobs.json"
 
-    This prevents stale routing facts from being re-ingested purely from memory notes.
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        raw = []
+
+    jobs = raw if isinstance(raw, list) else ((raw.get("jobs") or []) if isinstance(raw, dict) else [])
+
+    for job in jobs:
+        if not isinstance(job, dict):
+            continue
+        if (job.get("name") or "") != "connect-dots-nightly":
+            continue
+
+        payload = job.get("payload") or {}
+        return {
+            "model": payload.get("model") or "(unknown)",
+            "thinking": payload.get("thinking") or "(unknown)",
+            "jobsPath": str(p),
+        }
+
+    return {
+        "model": "(unknown)",
+        "thinking": "(unknown)",
+        "jobsPath": str(p),
+    }
+
+
+def _format_nightly_model_value(job: dict) -> str:
+    model = job.get("model") or "(unknown)"
+    thinking = job.get("thinking") or "(unknown)"
+    router_note = "no OpenRouter" if not str(model).startswith("openrouter/") else "uses OpenRouter"
+    return f"{model} thinking={thinking} ({router_note})"
+
+
+def _write_nightly_model_snapshot(*, ws: Path, scope_dir: Path, job: dict) -> Path:
+    """Write a small, auditable, workspace-local snapshot for the nightly cron override."""
+    model = job.get("model") or "(unknown)"
+    thinking = job.get("thinking") or "(unknown)"
+
+    snap = scope_dir / "nightly-model-pin.txt"
+    write_text(
+        snap,
+        "\n".join(
+            [
+                "job: connect-dots-nightly",
+                f"model: {model}",
+                f"thinking: {thinking}",
+                f"generatedAt: {now_iso()}",
+            ]
+        )
+        + "\n",
+    )
+    return snap
+
+
+def _patch_openclaw_runtime_proposal(*, ws: Path, scope_dir: Path, proposal_path: Path) -> None:
+    """Ensure high-churn runtime facts are sourced from live config snapshots.
+
+    This prevents stale routing/model-pin facts from being re-ingested purely from memory notes.
     """
     try:
         proposal = load_json(proposal_path)
@@ -207,19 +270,30 @@ def _patch_openclaw_runtime_proposal(*, ws: Path, scope_dir: Path, proposal_path
     primary = routing.get("primary") or "(unknown)"
     value = _format_routing_value(routing)
 
+    nightly_job = _read_connect_dots_nightly_job()
+    nightly_snap_path = _write_nightly_model_snapshot(ws=ws, scope_dir=scope_dir, job=nightly_job)
+    nightly_rel = nightly_snap_path.relative_to(ws).as_posix()
+    nightly_model = nightly_job.get("model") or "(unknown)"
+    nightly_thinking = nightly_job.get("thinking") or "(unknown)"
+    nightly_value = _format_nightly_model_value(nightly_job)
+
     items = proposal.get("items") or {}
     facts = items.get("confirmed_facts") or []
     if not isinstance(facts, list):
         facts = []
 
-    def matches(it: dict) -> bool:
+    def matches_routing(it: dict) -> bool:
         return (it.get("fact") == "model.routing_routine_check") or (it.get("id") == "ops-routing-routine-check")
 
-    patched = False
+    def matches_nightly_model(it: dict) -> bool:
+        return (it.get("fact") == "connect_dots.nightly.model_pinned") or (it.get("id") == "ops-connect-dots-nightly-model-pin")
+
+    patched_routing = False
+    patched_nightly_model = False
     for it in facts:
         if not isinstance(it, dict):
             continue
-        if matches(it):
+        if matches_routing(it):
             it["id"] = it.get("id") or "ops-routing-routine-check"
             it["fact"] = "model.routing_routine_check"
             it["value"] = value
@@ -233,10 +307,32 @@ def _patch_openclaw_runtime_proposal(*, ws: Path, scope_dir: Path, proposal_path
                     "ts": now_iso(),
                 }
             ]
-            patched = True
-            break
+            patched_routing = True
+            continue
 
-    if not patched:
+        if matches_nightly_model(it):
+            it["id"] = it.get("id") or "ops-connect-dots-nightly-model-pin"
+            it["fact"] = "connect_dots.nightly.model_pinned"
+            it["value"] = nightly_value
+            it.setdefault("domain", "connect-dots")
+            it["ttl_days"] = int(it.get("ttl_days") or 14)
+            it["evidence"] = [
+                {
+                    "path": nightly_rel,
+                    "lines": "L2-L2",
+                    "quote": f"model: {nightly_model}",
+                    "ts": now_iso(),
+                },
+                {
+                    "path": nightly_rel,
+                    "lines": "L3-L3",
+                    "quote": f"thinking: {nightly_thinking}",
+                    "ts": now_iso(),
+                },
+            ]
+            patched_nightly_model = True
+
+    if not patched_routing:
         facts.append(
             {
                 "id": "ops-routing-routine-check",
@@ -251,6 +347,31 @@ def _patch_openclaw_runtime_proposal(*, ws: Path, scope_dir: Path, proposal_path
                         "quote": f"primary: {primary}",
                         "ts": now_iso(),
                     }
+                ],
+            }
+        )
+
+    if not patched_nightly_model:
+        facts.append(
+            {
+                "id": "ops-connect-dots-nightly-model-pin",
+                "fact": "connect_dots.nightly.model_pinned",
+                "value": nightly_value,
+                "domain": "connect-dots",
+                "ttl_days": 14,
+                "evidence": [
+                    {
+                        "path": nightly_rel,
+                        "lines": "L2-L2",
+                        "quote": f"model: {nightly_model}",
+                        "ts": now_iso(),
+                    },
+                    {
+                        "path": nightly_rel,
+                        "lines": "L3-L3",
+                        "quote": f"thinking: {nightly_thinking}",
+                        "ts": now_iso(),
+                    },
                 ],
             }
         )

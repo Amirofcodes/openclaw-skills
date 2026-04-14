@@ -1114,21 +1114,38 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
             "agents": {
                 "defaults": {
                     "model": {
-                        "primary": "openai-codex/gpt-5.2",
+                        "primary": "openai-codex/gpt-5.4",
                         "fallbacks": [
-                            "openrouter/openai/gpt-5.2",
-                            "openai-codex/gpt-5.1-codex-mini",
+                            "openrouter/openai/gpt-5.4-nano",
+                            "openai-codex/gpt-5.4-mini",
                         ],
                     },
-                    "heartbeat": {"model": "openrouter/google/gemini-2.0-flash-lite-001"},
+                    "heartbeat": {"model": "openrouter/google/gemini-2.5-flash-lite"},
                 }
             }
         }
         cfg_path = ws / "fake-openclaw.json"
         cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
 
-        # Proposal includes a stale routing fact; nightly_run should rewrite it to cite runtime-routing.txt
-        # and filter out OpenRouter OpenAI/Anthropic fallbacks.
+        jobs_path = ws / "fake-cron-jobs.json"
+        jobs_path.write_text(
+            json.dumps(
+                [
+                    {
+                        "name": "connect-dots-nightly",
+                        "payload": {
+                            "kind": "agentTurn",
+                            "model": "openai-codex/gpt-5.4",
+                            "thinking": "high",
+                        },
+                    }
+                ]
+            ),
+            encoding="utf-8",
+        )
+
+        # Proposal includes stale runtime facts; nightly_run should rewrite them to cite workspace-local
+        # snapshots and filter out OpenRouter OpenAI/Anthropic fallbacks.
         proposal = {
             "scope": "openclaw-runtime/ops",
             "generatedAt": "2026-02-22T00:00:00+01:00",
@@ -1148,6 +1165,21 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
                                 "ts": "2026-02-22T00:00:00+01:00",
                             }
                         ],
+                    },
+                    {
+                        "id": "ops-connect-dots-nightly-model-pin",
+                        "fact": "connect_dots.nightly.model_pinned",
+                        "value": "stale",
+                        "domain": "connect-dots",
+                        "ttl_days": 120,
+                        "evidence": [
+                            {
+                                "path": "memory/does-not-matter.md",
+                                "lines": "L1-L1",
+                                "quote": "stale",
+                                "ts": "2026-02-22T00:00:00+01:00",
+                            }
+                        ],
                     }
                 ],
                 "hypotheses": [],
@@ -1158,7 +1190,9 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
         (scope_dir / "proposal.json").write_text(json.dumps(proposal), encoding="utf-8")
 
         old = os.environ.get("OPENCLAW_CONFIG_PATH")
+        old_jobs = os.environ.get("OPENCLAW_CRON_JOBS_PATH")
         os.environ["OPENCLAW_CONFIG_PATH"] = str(cfg_path)
+        os.environ["OPENCLAW_CRON_JOBS_PATH"] = str(jobs_path)
         try:
             code, out, err = run(
                 [
@@ -1180,24 +1214,40 @@ class ConnectDotsDeterministicCoreTests(unittest.TestCase):
                 os.environ.pop("OPENCLAW_CONFIG_PATH", None)
             else:
                 os.environ["OPENCLAW_CONFIG_PATH"] = old
+            if old_jobs is None:
+                os.environ.pop("OPENCLAW_CRON_JOBS_PATH", None)
+            else:
+                os.environ["OPENCLAW_CRON_JOBS_PATH"] = old_jobs
 
         self.assertEqual(code, 0, msg=err)
 
-        snap = scope_dir / "runtime-routing.txt"
-        self.assertTrue(snap.exists())
+        routing_snap = scope_dir / "runtime-routing.txt"
+        self.assertTrue(routing_snap.exists())
+        nightly_snap = scope_dir / "nightly-model-pin.txt"
+        self.assertTrue(nightly_snap.exists())
 
         patched = json.loads((scope_dir / "proposal.json").read_text(encoding="utf-8"))
-        facts = patched["items"]["confirmed_facts"]
-        self.assertEqual(len(facts), 1)
-        v = facts[0]["value"]
-        self.assertIn("primary=openai-codex/gpt-5.2", v)
-        self.assertIn("openai-codex/gpt-5.1-codex-mini", v)
+        facts = {fact["id"]: fact for fact in patched["items"]["confirmed_facts"]}
+        self.assertEqual(len(facts), 2)
+
+        routing = facts["ops-routing-routine-check"]
+        v = routing["value"]
+        self.assertIn("primary=openai-codex/gpt-5.4", v)
+        self.assertIn("openai-codex/gpt-5.4-mini", v)
         self.assertNotIn("openrouter/openai", v)
 
         # Evidence must point to the workspace snapshot file.
-        ev = facts[0]["evidence"][0]
+        ev = routing["evidence"][0]
         self.assertTrue(ev["path"].startswith("tmp/connect-dots/runs/"))
         self.assertIn("runtime-routing.txt", ev["path"])
+
+        nightly = facts["ops-connect-dots-nightly-model-pin"]
+        self.assertEqual(nightly["value"], "openai-codex/gpt-5.4 thinking=high (no OpenRouter)")
+        nightly_ev = nightly["evidence"]
+        self.assertEqual(len(nightly_ev), 2)
+        self.assertIn("nightly-model-pin.txt", nightly_ev[0]["path"])
+        self.assertEqual(nightly_ev[0]["quote"], "model: openai-codex/gpt-5.4")
+        self.assertEqual(nightly_ev[1]["quote"], "thinking: high")
 
         # A phase-B run record should also be emitted.
         run_json = json.loads((ws / "tmp" / "connect-dots" / "runs" / run_id / "run.json").read_text(encoding="utf-8"))

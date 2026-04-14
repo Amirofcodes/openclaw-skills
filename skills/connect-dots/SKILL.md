@@ -46,7 +46,7 @@ Feature flag:
 - `repos`: CI failing, waiting on review, PR stuck > N days, or JD mentions a near-term release/deadline.
 
 ## Model policy (locked)
-- Nightly brief generation: **force default OAuth OpenAI model** `openai-codex/gpt-5.2` with `thinking=high`.
+- Nightly brief generation: **force default OAuth OpenAI model** `openai-codex/gpt-5.4` with `thinking=high`.
 - Daytime: default model (escalate only if you explicitly override in the request).
 - OpenRouter must not be used for this skill.
 
